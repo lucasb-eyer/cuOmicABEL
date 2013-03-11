@@ -1,0 +1,5 @@
+CC = gcc
+CFLAGS = -static -static-libgcc -D_FILE_OFFSET_BITS=64 -pthread -fopenmp -DMKL -DLINUX
+
+#LDFLAGS = -L$(MKLROOT)/lib/intel64/ -L$(MKLROOT)/lib/em64t/ -L$(INTELROOT)/compiler/lib/intel64
+LDLIBS = $(MKLROOT)/lib/intel64/librwthmkl.a $(INTELROOT)/compiler/lib/intel64/libiomp5.a -lrt

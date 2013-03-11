@@ -1,0 +1,5 @@
+CC = icc
+CFLAGS = -D_FILE_OFFSET_BITS=64 -pthread -openmp -DMKL -DLINUX
+
+LDFLAGS = -L$(MKLROOT)/lib/intel64/ -L$(INTELROOT)/compiler/lib/intel64
+LDLIBS = -lrwthmkl -lrt
