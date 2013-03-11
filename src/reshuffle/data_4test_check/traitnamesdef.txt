@@ -1,0 +1,5 @@
+TRAIT #1	hgta
+TRAIT #2	tga
+TRAIT #3	tca
+TRAIT #4	ldla
+TRAIT #5	hdla

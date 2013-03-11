@@ -1,0 +1,5 @@
+CC = icc
+CFLAGS = -D_FILE_OFFSET_BITS=64 -pthread -openmp -DMKL -DOSX
+
+LDFLAGS = -L$(MKLROOT)/lib/ -L/opt/intel/composerxe-2011.1.122/compiler/lib/
+LDLIBS = -lmkl_intel -lmkl_intel_thread -lmkl_core -liomp5 -lmkl_lapack95_ilp64 

@@ -1,0 +1,17 @@
+ver 0.001
+	improved parsing of command line:
+		search for parameter's name only after separator
+		delete parameter's name and value from command line in case of finding it
+ver 0.002
+	tests for all points in specification
+		one bug with traitsbynames test unfixed
+	all datas written in one file in root folder
+		datadims->datadims.txt
+		trait(snp)names->traits(snp)names.txt
+		traits(snps)->data.txt
+		chi->chi_data.txt
+		traits,snps,chi->chi_data.txt
+		heritabilities->estimates.txt
+		dataslim,chi->slim_data.txt
+		
+		

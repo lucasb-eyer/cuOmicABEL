@@ -1,0 +1,3 @@
+Number of traits	5
+Number of SNP	100
+Number of covariates	2
