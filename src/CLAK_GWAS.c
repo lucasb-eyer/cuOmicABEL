@@ -513,7 +513,7 @@ void print_info( FGLS_config_t *cf )
 		printf( "\nWill use OmicABEL-Chol with the following parameters\n" );
 #ifdef WITH_GPU
 	else if ( !strcmp( cf->var, "chol_gpu" ) )
-		printf( "\nWill use OmicABEL-Chol (GPU) with the following parameters\n" );
+		printf( "\nWill use OmicABEL-Chol on GPU(s) with the following parameters\n" );
 #endif
 	else
 		printf( "\nWill use OmicABEL-Eigen with the following parameters:\n" );

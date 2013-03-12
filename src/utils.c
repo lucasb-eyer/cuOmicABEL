@@ -39,6 +39,11 @@
   #include <mkl.h>
 #endif
 
+#ifdef WITH_GPU
+  #include <cuda_runtime_api.h>
+  #include <cublas_v2.h>
+#endif
+
 #include "GWAS.h"
 #include "wrappers.h"
 #include "utils.h"
@@ -315,6 +320,40 @@ void estimate_block_sizes( FGLS_config_t *cf, const char* var, int estimate_inc 
 	else if ( !strcmp( var, "chol_gpu" ) ) {
 		// TODO(lucasb): This variant needs three buffers in main memory and two on the GPU.
 		estimate_block_sizes( cf, "chol", estimate_inc );
+
+		// See how many GPUs we have and what's the least memory available we can use.
+		int ngpus = 0;
+		if(cudaGetDeviceCount(&ngpus) != cudaSuccess) {
+			fprintf( stderr, "[ERROR] Cannot determine the number of GPUs.\n");
+			exit(EXIT_FAILURE);
+		}
+
+		size_t maxmem = 0;
+		int igpu = 0;
+		for(igpu = 0 ; igpu < ngpus ; ++igpu) {
+			size_t free, total;
+			cudaSetDevice(igpu);
+			if(cudaMemGetInfo(&free, &total) != cudaSuccess) {
+				fprintf(stderr, "[ERROR] Cannot get free memory amount of GPU %d.\n", igpu);
+				exit(EXIT_FAILURE);
+			}
+			maxmem = free > maxmem ? free : maxmem;
+		}
+
+		// How much of that memory could we use for a block?
+		// There are only two blocks and the triangular L matrix on each device.
+		if(maxmem < cf->n*cf->n) {
+			fprintf(stderr, "[ERROR] Need at the very least %ld MB on the GPU but it can only hold %ld MB!\n", cf->n*cf->n*sizeof(double)/1024/1024, maxmem/1024/1024);
+			exit(EXIT_FAILURE);
+		}
+		size_t maxblock = (maxmem - cf->n*cf->n)/2;
+
+		// Each GPU can handle such a block.
+		cf->x_b = MIN(cf->x_b, maxblock*ngpus);
+
+		// The problem with this is that IT STILL DOESN'T MEAN IT WILL WORK!
+		// Because of memory fragmentation, it might not be possible to allocate
+		// blocks of this size.
 	}
 #endif
 }

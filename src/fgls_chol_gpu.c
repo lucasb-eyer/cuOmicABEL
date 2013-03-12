@@ -114,8 +114,6 @@ int fgls_chol_gpu( FGLS_config_t cf )
 	double *tmpBs, *tmpVs; // Buffer with one B and one V per thread
 	double *oneB, *oneV;   // Each thread pointer to its B and V
 
-    fprintf(stdout, "\nHi from the GPU code!\n");
-
     if ( cf.y_b != 1 )
 	{
         fprintf(stderr, "\n[Warning] y_b not used (set to 1)\n");
@@ -123,9 +121,71 @@ int fgls_chol_gpu( FGLS_config_t cf )
 	}
 
     if ( cf.t > 1 ) {
-        fprintf(stderr, "\nThe chol_gpu variant doesn't support multiple phenotypes. Use the chol or eigen variants.\n");
-        exit(1); // Die a fast death.
+        fprintf(stderr, "\n[ERROR] The chol_gpu variant doesn't support multiple phenotypes. Use the chol or eigen variants.\n");
+        exit(EXIT_FAILURE);
     }
+
+    ///////
+    // GPU: Initializing the GPU(s)
+    int ngpus = 0, igpu = 0;
+    cublasHandle_t cu_handle;
+    cublasStatus_t cu_status;
+    if((cu_status = cublasCreate(&cu_handle)) != CUBLAS_STATUS_SUCCESS) {
+        fprintf(stderr, "\n[ERROR] cublasCreate() failed (info: %d)\n", cu_status);
+        exit(EXIT_FAILURE);
+    }
+
+    cudaError_t cu_error;
+    if((cu_error = cudaGetDeviceCount(&ngpus)) != cudaSuccess) {
+        fprintf(stderr, "\n[ERROR] Can't get the cuda device count. Are there any? (info: %d)", cu_error);
+        exit(EXIT_FAILURE);
+    }
+
+    //fprintf(stdout, "\n[Info] Using %d GPUs\n", ngpus);
+
+    // Create two streams for each GPU: one computation stream and one data
+    // transfer stream, so those two can work in parallel.
+    cudaStream_t* cu_trans_streams = fgls_malloc(ngpus*sizeof(cudaStream_t));
+    cudaStream_t* cu_comp_streams = fgls_malloc(ngpus*sizeof(cudaStream_t));
+
+    for(igpu = 0 ; igpu < ngpus ; ++igpu) {
+        cudaSetDevice(igpu);
+        if((cu_error = cudaStreamCreate(cu_trans_streams + igpu)) != cudaSuccess) {
+            fprintf(stderr, "\n[ERROR] Something is wrong with your GPUs: couldn't create a transfer stream on GPU %d (info: %d)\n", igpu, cu_error);
+            exit(EXIT_FAILURE);
+        }
+        if((cu_error = cudaStreamCreate(cu_comp_streams + igpu)) != cudaSuccess) {
+            fprintf(stderr, "\n[ERROR] Something is wrong with your GPUs: couldn't create a computation stream on GPU %d (info: %d)\n", igpu, cu_error);
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    // We can already allocate GPU space for L here.
+    double** L_gpus = fgls_malloc(ngpus*sizeof(void*));
+    size_t L_gpu_bytes = (size_t)cf.n*cf.n * sizeof(double);
+
+    // Aswell as for the streamed Xrs.
+    double** Xr_alpha_gpus = fgls_malloc(ngpus*sizeof(double*));
+    double** Xr_beta_gpus = fgls_malloc(ngpus*sizeof(double*));
+    size_t Xr_gpu_bytes = (size_t)cf.x_b * cf.wXR * cf.n * sizeof(double);
+
+    for(igpu = 0 ; igpu < ngpus ; igpu++) {
+        cudaSetDevice(igpu);
+        if((cu_error = cudaMalloc((void**)&L_gpus[igpu], L_gpu_bytes)) != cudaSuccess) {
+            fprintf(stderr, "\n[ERROR] Not enough memory to allocate %ld bytes for L on GPU %d (info: %d)\n", L_gpu_bytes, igpu, cu_error);
+            exit(EXIT_FAILURE);
+        }
+        if((cu_error = cudaMalloc((void**)&Xr_alpha_gpus[igpu], Xr_gpu_bytes)) != cudaSuccess) {
+            fprintf(stderr, "\n[ERROR] Not enough memory to allocate %ld bytes for Xr on GPU %d (info: %d)\n", Xr_gpu_bytes, igpu, cu_error);
+            exit(EXIT_FAILURE);
+        }
+        if((cu_error = cudaMalloc((void**)&Xr_beta_gpus[igpu], Xr_gpu_bytes)) != cudaSuccess) {
+            fprintf(stderr, "\n[ERROR] Not enough memory to allocate %ld bytes for Xr on GPU %d (info: %d)\n", Xr_gpu_bytes, igpu, cu_error);
+            exit(EXIT_FAILURE);
+        }
+    }
+    // /GPU
+    ///////
 
     /* Memory allocation */
     // In-core
@@ -406,6 +466,19 @@ int fgls_chol_gpu( FGLS_config_t cf )
 #if VAMPIR
     VT_USER_END("WAIT_ALL");
 #endif
+
+    // GPU: clean-up
+    for(igpu = 0 ; igpu < ngpus ; ++igpu) {
+        cudaSetDevice(igpu);
+        cudaFree(L_gpus[igpu]);
+        cudaFree(Xr_alpha_gpus[igpu]);
+        cudaFree(Xr_beta_gpus[igpu]);
+    }
+    cublasDestroy(cu_handle);
+
+    free(L_gpus);
+    free(Xr_alpha_gpus);
+    free(Xr_beta_gpus);
 
     /* Clean-up */
     free( M );
