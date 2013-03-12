@@ -134,7 +134,7 @@ void get_main_memory_size( size_t *totalMem, size_t *availMem )
 #endif
 }
 
-void estimate_block_sizes( FGLS_config_t *cf, char var, int estimate_inc )
+void estimate_block_sizes( FGLS_config_t *cf, const char* var, int estimate_inc )
 {
     size_t avail_mem = cf->availMem;
     size_t y_b = 100, ratio = 50, x_b = ratio * y_b;
@@ -143,7 +143,7 @@ void estimate_block_sizes( FGLS_config_t *cf, char var, int estimate_inc )
 
     size_t mem_usage_per_th;
     int converged = 0;
-    if ( var == 'e' )
+    if ( !strcmp( var, "eigen" ) )
     {
         avail_mem = avail_mem * .95; // "Safety"
         avail_mem = avail_mem - ( cf->n * cf->n ); // Z
@@ -230,7 +230,7 @@ void estimate_block_sizes( FGLS_config_t *cf, char var, int estimate_inc )
 			}
 		}
     }
-	else if ( var == 'c' )
+	else if ( !strcmp( var, "chol" ) )
 	{
 		avail_mem = cf->availMem;
         avail_mem = avail_mem * .95; // "Safety"
@@ -311,6 +311,12 @@ void estimate_block_sizes( FGLS_config_t *cf, char var, int estimate_inc )
 			}
 		}
 	}
+#ifdef WITH_GPU
+	else if ( !strcmp( var, "chol_gpu" ) ) {
+		// TODO(lucasb): This variant needs three buffers in main memory and two on the GPU.
+		estimate_block_sizes( cf, "chol", estimate_inc );
+	}
+#endif
 }
 
 void print_timestamp( void )

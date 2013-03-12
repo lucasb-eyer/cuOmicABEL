@@ -22,30 +22,16 @@
  *   Diego Fabregat-Traver (fabregat@aices.rwth-aachen.de)
  */
 
-#ifndef UTILS_H
-#define UTILS_H
+#ifndef FGLS_CHOL_GPU_H
+#define FGLS_CHOL_GPU_H
 
-#define DOUBLE_NAN 0x7FF8000000000000
+#ifdef WITH_GPU
+// do nothing if no GPU support is compiled-in.
 
 #include "GWAS.h"
-/*#include "utils.h"*/
 
-// Threading
-void set_multi_threaded_BLAS( int nths );
-void set_single_threaded_BLAS( void );
+int fgls_chol_gpu( FGLS_config_t cf );
 
-// Compute an approximation of the machine epsilon
-// in double precision (within a factor of two)
-double get_epsilon( void );
+#endif // WITH_GPU
 
-// Startup
-void get_main_memory_size( size_t *totalMem, size_t *availMem );
-void estimate_block_sizes( FGLS_config_t *cf, const char* var, int estimate_inc );
-
-void print_timestamp( void );
-
-// Sanity
-void average( double *data, int n, int ncols, int threshold, const char *obj_type, char *obj_name, int namelength, int verbose );
-void checkNoNans( size_t n, double *buff, const char* err_msg);
-
-#endif // UTILS_H
+#endif // FGLS_CHOL_GPU_H

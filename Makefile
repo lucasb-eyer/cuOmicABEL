@@ -6,7 +6,11 @@ DRIVER = ./HP-GWAS
 CFLAGS+=-g -Wall -I $(SRCDIR)/  # -D__WORDSIZE=64
 LDLIBS += -lm
 
-SRCS = $(SRCDIR)/CLAK_GWAS.c $(SRCDIR)/fgls_chol.c $(SRCDIR)/fgls_eigen.c $(SRCDIR)/wrappers.c $(SRCDIR)/timing.c $(SRCDIR)/statistics.c $(SRCDIR)/REML.c $(SRCDIR)/optimization.c $(SRCDIR)/ooc_BLAS.c $(SRCDIR)/double_buffering.c $(SRCDIR)/utils.c $(SRCDIR)/GWAS.c $(SRCDIR)/databel.c 
+# Use these if you want GPU support built in too. Requires a valid CUDA install.
+CFLAGS += -DWITH_GPU -I$(CUDA_ROOT)/include
+LDLIBS += -L$(CUDA_ROOT)/lib64 -lcublas
+
+SRCS = $(SRCDIR)/CLAK_GWAS.c $(SRCDIR)/fgls_chol.c $(SRCDIR)/fgls_chol_gpu.c $(SRCDIR)/fgls_eigen.c $(SRCDIR)/wrappers.c $(SRCDIR)/timing.c $(SRCDIR)/statistics.c $(SRCDIR)/REML.c $(SRCDIR)/optimization.c $(SRCDIR)/ooc_BLAS.c $(SRCDIR)/double_buffering.c $(SRCDIR)/utils.c $(SRCDIR)/GWAS.c $(SRCDIR)/databel.c
 OBJS = $(SRCS:.c=.o)
 
 .PHONY: all clean
@@ -36,6 +40,9 @@ src/double_buffering.o: src/double_buffering.c src/GWAS.h src/databel.h \
 src/fgls_chol.o: src/fgls_chol.c src/blas.h src/lapack.h src/options.h \
  src/GWAS.h src/databel.h src/wrappers.h src/timing.h \
  src/double_buffering.h src/utils.h src/fgls_chol.h
+src/fgls_chol_gpu.o: src/fgls_chol_gpu.c src/blas.h src/lapack.h src/options.h \
+ src/GWAS.h src/databel.h src/wrappers.h src/timing.h \
+ src/double_buffering.h src/utils.h src/fgls_chol_gpu.h
 src/fgls_eigen.o: src/fgls_eigen.c src/blas.h src/lapack.h src/options.h \
  src/GWAS.h src/databel.h src/wrappers.h src/timing.h \
  src/double_buffering.h src/ooc_BLAS.h src/utils.h src/fgls_eigen.h

@@ -33,6 +33,7 @@
 #include "timing.h"
 #include "REML.h"
 #include "fgls_chol.h"
+#include "fgls_chol_gpu.h"
 #include "fgls_eigen.h"
 
 void usage( void );
@@ -111,7 +112,7 @@ int main( int argc, char *argv[] )
 		printf( "Done ( took %.3f secs )\n", get_diff_ms(&start, &end)/1000. );
 		fflush( stdout );
 	}
-	else if ( !strcmp( var, "chol" ) )
+	else if ( !strcmp( var, "chol" ) || !strcmp( var, "chol_gpu" ) )
 	{
 		printf( "Estimating GWAS parameters: heritability and variance... " );
 		fflush( stdout );
@@ -125,7 +126,12 @@ int main( int argc, char *argv[] )
 		printf( "Performing the study... " );
 		fflush( stdout );
 		gettimeofday(&start, NULL);
-		fgls_chol( cf ); // Computation
+#ifdef WITH_GPU
+		if ( !strcmp( var, "chol_gpu" ) )
+			fgls_chol_gpu( cf );
+		else
+#endif
+			fgls_chol( cf ); // Computation
     	gettimeofday(&end, NULL);
 		printf( "Done ( took %.3f secs )\n", get_diff_ms(&start, &end)/1000. );
 		fflush( stdout );
@@ -145,7 +151,11 @@ void usage( void )
 {
     fprintf(stderr, "\nUsage: HP-GWAS [options]\n\n");
     fprintf(stderr, "Following options may be given:\n\n");
+#ifdef WITH_GPU
+    fprintf(stderr, "  -var     [chol | chol_gpu | eigen] Default is chol.\n");
+#else
     fprintf(stderr, "  -var     [chol | eigen] Default is chol.\n");
+#endif
     fprintf(stderr, "  -cov     base path to covariates file \n");
     fprintf(stderr, "  -phi     base path to kinship? file \n");
     fprintf(stderr, "  -snp     base path to SNPs file \n");
@@ -182,6 +192,10 @@ int parse_input( int argc, char *argv[], char *var,
 				  /*fprintf( stderr, "Chol variant is currently broken\n" );*/
 				  /*exit( EXIT_FAILURE );*/
 			  }
+#ifdef WITH_GPU
+			  else if ( !strcmp( argv[arg], "chol_gpu" ) )
+				  strncpy( var, argv[arg], STR_BUFFER_SIZE );
+#endif
 			  else if ( !strcmp( argv[arg], "eigen" ) )
 				  strncpy( var, argv[arg], STR_BUFFER_SIZE );
 			  else
@@ -495,8 +509,12 @@ void print_info( FGLS_config_t *cf )
 	printf( "  # of phenotypes:  %zu\n", cf->t);
 	fflush( stdout );
 
-	if ( cf->var[0] == 'c' )
+	if ( !strcmp( cf->var, "chol" ) )
 		printf( "\nWill use OmicABEL-Chol with the following parameters\n" );
+#ifdef WITH_GPU
+	else if ( !strcmp( cf->var, "chol_gpu" ) )
+		printf( "\nWill use OmicABEL-Chol (GPU) with the following parameters\n" );
+#endif
 	else
 		printf( "\nWill use OmicABEL-Eigen with the following parameters:\n" );
 	printf( "  x_b: %zu\n", cf->x_b );

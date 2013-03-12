@@ -61,7 +61,7 @@ void initialize_config(
 	/*cf->y_b = y_b;*/
 	/*cf->num_threads = num_threads;*/
 	get_main_memory_size( &cf->totalMem, &cf->availMem );
-	estimate_block_sizes( cf, cf->var[0], cf->x_b == -1 || cf->y_b == -1 ); // if any is -1, estimate them
+	estimate_block_sizes( cf, cf->var, cf->x_b == -1 || cf->y_b == -1 ); // if any is -1, estimate them
 /*	if ( !(cf->x_b == -1 || cf->y_b == -1) )
 	{
 		cf->x_b = xb;
