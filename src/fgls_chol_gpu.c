@@ -58,6 +58,20 @@
     #include "vt_user.h"
 #endif
 
+#include <stdarg.h>
+static void sync_gpus(int ngpus);
+static void start_section(struct timeval* t_start, int ngpus, const char* vt_id, const char* text, ...);
+static void end_section(struct timeval* t_start, int ngpus, const char* vt_id);
+#if 1
+#define START_SECTION(VT_ID, MSG) start_section(&t_start, ngpus, VT_ID, MSG "... ")
+#define START_SECTION2(VT_ID, MSG, ...) start_section(&t_start, ngpus, VT_ID, MSG "... ", __VA_ARGS__)
+#define END_SECTION(VT_ID) end_section(&t_start, ngpus, VT_ID)
+#else
+#define START_SECTION(VT_ID, MSG) (void*)0
+#define START_SECTION2(VT_ID, MSG, ...) (void*)0
+#define END_SECTION(VT_ID) (void*)0
+#endif
+
 /*
  * Builds Phi as an SPD matrix, after the eigenvalues were fixed 
  * during the REML estimation
@@ -105,7 +119,7 @@ int fgls_chol_gpu( FGLS_config_t cf )
     int info;
 
     /* iterators and auxiliar vars */
-    int ib, i, j, k, l; // size_t
+    int i, j, k, l; // size_t
     int nn = cf.n * cf.n; // size_t
 	size_t size_one_b_record = p + (p*(p+1))/2;
 
@@ -114,6 +128,9 @@ int fgls_chol_gpu( FGLS_config_t cf )
 	double *tmpBs, *tmpVs; // Buffer with one B and one V per thread
 	double *oneB, *oneV;   // Each thread pointer to its B and V
 
+    // For measuring times.
+    struct timeval t_start;
+
     if ( cf.y_b != 1 )
 	{
         fprintf(stderr, "\n[Warning] y_b not used (set to 1)\n");
@@ -121,6 +138,9 @@ int fgls_chol_gpu( FGLS_config_t cf )
 	}
 
     if ( cf.t > 1 ) {
+        // Note/TODO: to make it work, you need to fix the "fetching next Xr
+        // from disk" code part to restart from offset zero at some point.
+        // That's why the loop over t is still left in.
         fprintf(stderr, "\n[ERROR] The chol_gpu variant doesn't support multiple phenotypes. Use the chol or eigen variants.\n");
         exit(EXIT_FAILURE);
     }
@@ -210,23 +230,37 @@ int fgls_chol_gpu( FGLS_config_t cf )
     double *XR_comp, *Y_comp, *B_comp;
 
     /* Asynchronous IO data structures */
-	double_buffering db_XR, db_Y, db_B;
-	double_buffering_init( &db_XR, (size_t)cf.n * cf.wXR * cf.x_b * sizeof(double),
-			                cf.XR, &cf ); // _fp
+	double_buffering db_Y, db_B;
 	double_buffering_init( &db_Y, (size_t)cf.n * cf.y_b * sizeof(double),
 			                cf.Y,  &cf );
 	double_buffering_init( &db_B, (size_t)size_one_b_record * cf.x_b * cf.y_b * sizeof(double),
 			                cf.B,  &cf );
 
-#if VAMPIR
-    VT_USER_START("READ_X");
-#endif
-    /* Read first block of XR's */
-	double_buffering_read_XR( &db_XR, IO_BUFF, 0, (size_t)MIN( cf.x_b, cf.m ) - 1 );
-	double_buffering_swap( &db_XR );
-#if VAMPIR
-    VT_USER_END("READ_X");
-#endif
+    ///////
+    // GPU
+    // For the triple buffering:
+    double* Xr[3];
+    size_t A = 0, B = 1, C = 2; // Indices for buffer rotation.
+    cudaError_t cu_error1 = cudaHostAlloc((void**)&Xr[A], (size_t)cf.x_b * cf.wXR * cf.n * sizeof(double), cudaHostAllocPortable);
+    cudaError_t cu_error2 = cudaHostAlloc((void**)&Xr[B], (size_t)cf.x_b * cf.wXR * cf.n * sizeof(double), cudaHostAllocPortable);
+    cudaError_t cu_error3 = cudaHostAlloc((void**)&Xr[C], (size_t)cf.x_b * cf.wXR * cf.n * sizeof(double), cudaHostAllocPortable);
+    if(cu_error != cudaSuccess || cu_error2 != cudaSuccess || cu_error3 != cudaSuccess) {
+        fprintf(stderr, "\n[ERROR] Not enough memory to allocate page-locked triple buffers (3*%ld MB, info: %d)\n", (size_t)cf.x_b * cf.wXR * cf.n * sizeof(double), cu_error | cu_error2 | cu_error3);
+        exit(EXIT_FAILURE);
+    }
+    struct aiocb aio_Xr; // Always only have one async read (in A).
+    // /GPU
+    ///////
+
+// #if VAMPIR
+//     VT_USER_START("READ_X");
+// #endif
+//     /* Read first block of XR's */
+// 	double_buffering_read_XR( &db_XR, IO_BUFF, 0, (size_t)MIN( cf.x_b, cf.m ) - 1 );
+// 	double_buffering_swap( &db_XR );
+// #if VAMPIR
+//     VT_USER_END("READ_X");
+// #endif
 #if VAMPIR
     VT_USER_START("READ_Y");
 #endif
@@ -302,29 +336,150 @@ int fgls_chol_gpu( FGLS_config_t cf )
         VT_USER_END("COMP_J");
 #endif
 		/* Solve for x_b X's at once */
-        for (ib = 0; ib < m; ib += x_b) 
+
+        // Please refer to Lucas Beyer's paper and/or thesis to understand the loop.
+        // The dependency colors refer to the "timeline-perspective" figure.
+        // Basically, the idea is the following (read from top to bottom, then left to right):
+        //
+        //       b = -1             b = 0             b = 1         b = 2..last-2       b = last-1          b = last         b = last+1
+        //
+        //        ---                ---            wait beta         wait alpha        wait beta          wait alpha           ---
+        //        ---                ---               ---            wait beta         wait alpha         wait beta         wait alpha
+        //        ---                ---            trsm beta         trsm alpha        trsm beta          trsm alpha           ---
+        // read X[b+2] -> A   read X[b+2] -> B  read X[b+2] -> C  read X[b+2] -> A         ---                ---               ---
+        //        ---                ---               ---        recv_s beta -> B  recv_s alpha -> C  recv_s beta -> A  recv_s alpha -> B
+        //        ---         wait X[b+1] -> A  wait X[b+1] -> B  wait X[b+1] -> C  wait X[b+1] -> A          ---               ---
+        //        ---          send A -> beta    send B -> alpha   send C -> beta    send A -> alpha          ---               ---
+        //        ---                ---               ---         S-loop B -> B^    S-loop C -> C^     S-loop A -> A^    S-loop B -> B^
+        //        ---                ---               ---             write B^          write C^           write A^          write B^
+        //
+        // So we just need the following rotations at the end of each iteration:
+        //    A->B->C->A
+        //   alpha<->beta
+        int blockcount = m % x_b == 0 ? m/x_b : m/x_b+1;
+        int iblock = 0;
+        for (iblock = -1 ; iblock <= blockcount+1 ; ++iblock)
         {
-#if VAMPIR
-            VT_USER_START("READ_X");
-#endif
-            /* Read next block of XR's */
-			size_t next_x_from = ((size_t)ib + x_b) >= m ?  0 : (size_t)ib + x_b;
-			size_t next_x_to   = ((size_t)ib + x_b) >= m ? MIN( (size_t)x_b, (size_t)m ) - 1 : 
-				                                           next_x_from + MIN( (size_t)x_b, (size_t)m - next_x_from ) - 1;
-			double_buffering_read_XR( &db_XR, IO_BUFF, next_x_from, next_x_to );
-#if VAMPIR
-            VT_USER_END("READ_X");
-#endif
+            // cu_trsm_wait alpha
+            // Wait for the previous GPU computation to be done...
+            // (The first GPU computation happens at i == 1 thus we first wait at i == 2)
+            // (bordeaux dependency, also implied by single lifeline of GPU.)
+            if(2 <= iblock) {
+                START_SECTION2("GPU_trsm", "%d: Waiting for the trsms (%d) on the GPUs to be done", iblock, iblock-1);
+//                 for(igpu = 0 ; igpu < ngpus ; ++igpu) {
+//                     // cudaSetDevice(igpu); // Unnecessary according to "cuda_webinar_multi_gpu.pdf", p. 6
+//                     cudaStreamSynchronize(cu_comp_streams[igpu]);
+//                 }
+                END_SECTION("GPU_trsm");
+            }
 
-#if VAMPIR
-            VT_USER_START("WAIT_X");
-#endif
-            /* Wait until current block of XR's is available for computation */
-			double_buffering_wait( &db_XR, COMP_BUFF );
-#if VAMPIR
-            VT_USER_END("WAIT_X");
-#endif
+            // cu_send_wait C -> beta
+            // wait for the sending of the previous data-block to the GPU to be done.
+            // (olive dependency)
+            if(1 <= iblock && iblock <= blockcount) {
+                START_SECTION2("GPU_send_Xr", "%d: Waiting for the sending of Xr (%d) parts to the GPUs to be done", iblock, iblock);
+//                 for(igpu = 0 ; igpu < ngpus ; ++igpu) {
+//                     cudaStreamSynchronize(cu_trans_streams[igpu]);
+//                 }
+                END_SECTION("GPU_send_Xr");
+            }
 
+            // alpha <- cu-trsm_async L_gpu, alpha
+            // dispatch the TRSM on the GPU for the block which was just sent there.
+            if(1 <= iblock && iblock <= blockcount) {
+                START_SECTION2("GPU_trsm", "%d: Starting the trsms (%d) on the GPUs", iblock, iblock);
+                int curr_Xr_block_length = MIN(x_b, m - (iblock-1)*x_b);
+                int rhss  = wXR * curr_Xr_block_length;
+
+                // TODO(lucasb): sanity check! (call to average, replaces NaNs by avg.)
+
+                for(igpu = 0 ; igpu < ngpus ; ++igpu) {
+//                     cudaSetDevice(igpu);
+//                     cublasSetStream(cu_handle, cu_comp_streams[igpu]);
+//                     if((cu_status = cublasDtrsm(cu_handle, CUBLAS_SIDE_LEFT, CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N, CUBLAS_DIAG_NON_UNIT, n, rhss/ngpus, &ONE, L_gpus[igpu], n, Xr_beta_gpus[igpu], n)) != CUBLAS_STATUS_SUCCESS) {
+//                         fprintf(stderr, "\n[ERROR] Computing the trsm on the GPU %d failed (info: %d)\n", igpu, cu_status);
+//                         exit(EXIT_FAILURE);
+//                     }
+                }
+                END_SECTION("GPU_trsm");
+            }
+
+            // aio_read Xr[b+2] -> A
+            // Read the second-next block from HDD to main memory.
+            if(iblock <= blockcount-2) {
+                START_SECTION2("READ_X", "%d: Starting the read of the Xr block (%d)", iblock, iblock+2);
+//                 fgls_aio_read( &aiocb_x,
+//                                fileno( XR_fp ), X[hdd_cpu_buff],
+//                                MIN((size_t)x_b, m - ((size_t)x_b*iblock)) * wXR * n * sizeof(double),
+//                                ((off_t)x_b*iblock) * wXR * n * sizeof(double) );
+                END_SECTION("READ_X");
+            }
+
+            // cu_recv B <- beta
+            // synchronuously get the results of the previous TRSM, sync since
+            // we need them for further computation anyway.
+            if(2 <= iblock) {
+                START_SECTION2("GPU_recv_LXr", "%d: Getting inv(L) * Xr (%d) back to the CPU", iblock, iblock-1);
+                //size_t prev_Xr_elems_per_device = prev_Xr_block_length*wXR*n/ngpus;
+                for(igpu = 0 ; igpu < ngpus ; ++igpu) {
+                    // TODO(lucasb): sync. Async makes almost no sense and isn't what the paper says.
+//                     cudaSetDevice(igpu);
+//                     if((cu_status = cublasGetVectorAsync(prev_Xr_elems_per_device, sizeof(double), Xr_alpha_gpus[igpu], 1, X[cpu_gpu_buff] + igpu*prev_Xr_elems_per_device, 1, cu_trans_streams[igpu])) != CUBLAS_STATUS_SUCCESS) {
+//                         fprintf(stderr, "\n[ERROR]sending GPU %d's part of inv(L)*Xr to the CPU failed (info: %d)\n", igpu, cu_status);
+//                         exit(EXIT_FAILURE);
+//                     }
+                }
+                END_SECTION("GPU_recv_LXr");
+            }
+
+            // aio_wait Xr[b+1] -> C
+            // cu_send_async C -> beta
+            // waits for the next X-block to be loaded and then sends it to
+            // the GPU so that it can be TRSMed in the next iteration.
+            // (blue dependency)
+            if(0 <= iblock && iblock <= blockcount-1) {
+                START_SECTION2("WAIT_X", "%d: Waiting for the Xr block's (%d) arrival in main memory with departure from HDD. Weight is %.2f MB", iblock, iblock+1, 0.0/0.0);//, aiocb_x.aio_nbytes/1024.0/1024.0);
+//                 fgls_aio_suspend( &aiocb_x, 1, NULL );
+                END_SECTION("WAIT_X");
+
+                // acu_send_async C -> beta
+                // send the next X-block we just waited for to the GPU.
+                START_SECTION2("GPU_send_Xr", "%d: Distributing the Xr block (%d) equally amongst the %d GPUs", iblock, iblock+1, ngpus);
+//                 size_t Xr_elems_per_device = n*(wXR*x_b)/ngpus;
+//                 for(igpu = 0 ; igpu < ngpus ; ++igpu) {
+//                     cudaSetDevice(igpu);
+//                     cublasSetStream(cu_handle, cu_trans_streams[igpu]);
+//                     if((cu_status = cublasSetVectorAsync(Xr_elems_per_device, sizeof(double), X[hdd_cpu_buff]+igpu*Xr_elems_per_device, 1, Xr_alpha_gpus[igpu], 1, cu_trans_streams[igpu])) != CUBLAS_STATUS_SUCCESS) {
+//                         char err[STR_BUFFER_SIZE];
+//                         snprintf(err, STR_BUFFER_SIZE, "sending part of Xr to the GPU %d failed (info: %d)", igpu, cu_status);
+//                         error_msg(err, 1);
+//                     }
+//                 }
+                END_SECTION("GPU_send_Xr");
+            }
+
+// #if VAMPIR
+//             VT_USER_START("READ_X");
+// #endif
+//             /* Read next block of XR's */
+// 			size_t next_x_from = ((size_t)ib + x_b) >= m ?  0 : (size_t)ib + x_b;
+// 			size_t next_x_to   = ((size_t)ib + x_b) >= m ? MIN( (size_t)x_b, (size_t)m ) - 1 : 
+// 				                                           next_x_from + MIN( (size_t)x_b, (size_t)m - next_x_from ) - 1;
+// 			double_buffering_read_XR( &db_XR, IO_BUFF, next_x_from, next_x_to );
+// #if VAMPIR
+//             VT_USER_END("READ_X");
+// #endif
+
+// #if VAMPIR
+//             VT_USER_START("WAIT_X");
+// #endif
+//             /* Wait until current block of XR's is available for computation */
+// 			double_buffering_wait( &db_XR, COMP_BUFF );
+// #if VAMPIR
+//             VT_USER_END("WAIT_X");
+// #endif
+
+#if 0
             /* Set the number of threads for the multi-threaded BLAS */
 			set_multi_threaded_BLAS( cf.num_threads );
 
@@ -345,6 +500,21 @@ int fgls_chol_gpu( FGLS_config_t cf )
 #if VAMPIR
             VT_USER_END("COMP_IB");
 #endif
+
+#endif // 0
+
+            // S-loop B -> B^
+            // aio_wait r[b-2]
+            // aio_write r[b-2]
+            // Perform the "remaining" computations using the previous TRSM's
+            // result on the CPU and then schedule their writing to HDD.
+            if(2 <= iblock) {
+                START_SECTION2("COMP_I", "%d: Computing the S-loop of block %d", iblock, iblock-1);
+//                sloop(out_r, Xr_block, Xl, y, Stl);
+                END_SECTION("COMP_I");
+            }
+
+#if 0
 
 #if CHOL_MIX_PARALLELISM
             /* Set the number of threads for the multi-threaded BLAS to 1.
@@ -447,10 +617,12 @@ int fgls_chol_gpu( FGLS_config_t cf )
             VT_USER_END("WRITE_BV");
 #endif
 
+#endif
+
             /* Swap buffers */
-			double_buffering_swap( &db_XR );
+//			double_buffering_swap( &db_XR );
 			double_buffering_swap( &db_B  );
-            iter++;
+            iter++; // TODO: don't need.
         }
         /* Swap buffers */
 		double_buffering_swap( &db_Y );
@@ -460,7 +632,7 @@ int fgls_chol_gpu( FGLS_config_t cf )
     VT_USER_START("WAIT_ALL");
 #endif
     /* Wait for the remaining IO operations issued */
-	double_buffering_wait( &db_XR, COMP_BUFF );
+// 	double_buffering_wait( &db_XR, COMP_BUFF );
 	double_buffering_wait( &db_Y,  COMP_BUFF );
 	double_buffering_wait( &db_B,  IO_BUFF );
 #if VAMPIR
@@ -474,6 +646,9 @@ int fgls_chol_gpu( FGLS_config_t cf )
         cudaFree(Xr_alpha_gpus[igpu]);
         cudaFree(Xr_beta_gpus[igpu]);
     }
+    cudaFreeHost(Xr[A]);
+    cudaFreeHost(Xr[B]);
+    cudaFreeHost(Xr[C]);
     cublasDestroy(cu_handle);
 
     free(L_gpus);
@@ -489,11 +664,65 @@ int fgls_chol_gpu( FGLS_config_t cf )
     free( tmpBs );
     free( tmpVs );
 
-	double_buffering_destroy( &db_XR );
+// 	double_buffering_destroy( &db_XR );
 	double_buffering_destroy( &db_Y  );
 	double_buffering_destroy( &db_B  );
 
     return 0;
+}
+
+static void sync_gpus(int ngpus)
+{
+    int igpu = 0;
+    for(igpu = 0 ; igpu < ngpus ; ++igpu) {
+        cudaSetDevice(igpu);
+        cudaStreamSynchronize(0);
+    }
+}
+
+static void start_section(struct timeval* t_start,
+                          int ngpus,
+                          const char* vt_id,
+                          const char* text, ...)
+{
+#ifdef FGLS_GPU_SERIAL
+    sync_gpus(ngpus);
+#endif
+#ifdef TIMING
+    read_clock(t_start);
+#endif
+#if defined(DEBUG) || defined(TIMING)
+    va_list argp;
+    va_start(argp, text);
+    vprintf(text, argp);
+    fflush(stdout);
+#endif
+
+#ifdef VTRACE
+    VT_USER_START(vt_id);
+#endif
+}
+
+static void end_section(struct timeval* t_start,
+                        int ngpus,
+                        const char* vt_id)
+{
+#ifdef FGLS_GPU_SERIAL
+    sync_gpus(ngpus);
+#endif
+#ifdef VTRACE
+    VT_USER_END(vt_id);
+#endif
+#ifdef TIMING
+    struct timeval t_end;
+    read_clock(&t_end);
+    int dt = elapsed_time(t_start, &t_end);
+    printf("done in %fs (%fms, %dus)\n", dt*0.000001, dt*0.001, dt);
+    fflush(stdout);
+#elif defined (DEBUG)
+    printf("done\n");
+    fflush(stdout);
+#endif
 }
 
 #endif // WITH_GPU
