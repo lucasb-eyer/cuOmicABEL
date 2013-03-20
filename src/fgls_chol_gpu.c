@@ -26,6 +26,7 @@
 #ifdef WITH_GPU
 // Do nothing if there is no GPU support.
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -77,6 +78,11 @@ static void end_section(struct timeval* t_start, int ngpus, const char* vt_id);
  * during the REML estimation
  */
 void build_SPD_Phi( int n, double *eigVecs, double *eigVals, double *Phi );
+
+static size_t xr_blocklen(size_t blocklen, size_t totallen, size_t iblock)
+{
+    return MIN(blocklen, totallen - (iblock)*blocklen);
+}
 
 /*
  * Cholesky-based GPU solution of the 
@@ -248,7 +254,8 @@ int fgls_chol_gpu( FGLS_config_t cf )
         fprintf(stderr, "\n[ERROR] Not enough memory to allocate page-locked triple buffers (3*%ld MB, info: %d)\n", (size_t)cf.x_b * cf.wXR * cf.n * sizeof(double), cu_error | cu_error2 | cu_error3);
         exit(EXIT_FAILURE);
     }
-    struct aiocb aio_Xr; // Always only have one async read (in A).
+    struct aiocb aio_Xr[2]; // We partly have two async reads: in A and C.
+    size_t aio_A = 0, aio_C = 1;
     // /GPU
     ///////
 
@@ -408,10 +415,15 @@ int fgls_chol_gpu( FGLS_config_t cf )
             // Read the second-next block from HDD to main memory.
             if(iblock <= blockcount-2) {
                 START_SECTION2("READ_X", "%d: Starting the read of the Xr block (%d)", iblock, iblock+2);
-//                 fgls_aio_read( &aiocb_x,
-//                                fileno( XR_fp ), X[hdd_cpu_buff],
-//                                MIN((size_t)x_b, m - ((size_t)x_b*iblock)) * wXR * n * sizeof(double),
-//                                ((off_t)x_b*iblock) * wXR * n * sizeof(double) );
+                memset(&aio_Xr[aio_A], 0, sizeof(aio_Xr[aio_A]));
+                aio_Xr[aio_A].aio_fildes = fileno(cf.XR);
+                aio_Xr[aio_A].aio_buf = Xr[A];
+                aio_Xr[aio_A].aio_nbytes = xr_blocklen(x_b, m, iblock+1) * wXR * n * sizeof(double);
+                aio_Xr[aio_A].aio_offset = x_b*(iblock+1) * wXR * n * sizeof(double);
+                if(aio_read(&aio_Xr[aio_A]) != 0) {
+                    fprintf(stderr, "\n[ERROR] Couldn't read asynchronuously! (%s)\n", strerror(errno));
+                    exit(EXIT_FAILURE);
+                }
                 END_SECTION("READ_X");
             }
 
@@ -438,8 +450,17 @@ int fgls_chol_gpu( FGLS_config_t cf )
             // the GPU so that it can be TRSMed in the next iteration.
             // (blue dependency)
             if(0 <= iblock && iblock <= blockcount-1) {
-                START_SECTION2("WAIT_X", "%d: Waiting for the Xr block's (%d) arrival in main memory with departure from HDD. Weight is %.2f MB", iblock, iblock+1, 0.0/0.0);//, aiocb_x.aio_nbytes/1024.0/1024.0);
-//                 fgls_aio_suspend( &aiocb_x, 1, NULL );
+                START_SECTION2("WAIT_X", "%d: Waiting for the Xr block's (%d) arrival in main memory with departure from HDD. Weight is %.2f MB", iblock, iblock+1, aio_Xr[aio_C].aio_nbytes/1024.0/1024.0);
+                if(aio_suspend((const struct aiocb* const[]){&aio_Xr[aio_C]}, 1, NULL) != 0) {
+                    fprintf(stderr, "\n[ERROR] Couldn't wait for asynchronuous read! (%s)\n", strerror(errno));
+                    exit(EXIT_FAILURE);
+                }
+
+                // Check if we got as many bytes as we asked for.
+                if(aio_return(&aio_Xr[aio_C]) != aio_Xr[aio_C].aio_nbytes) {
+                    fprintf(stderr, "\n[ERROR] Reading data asynchronuously: %s!\n", strerror(aio_error(&aio_Xr[aio_C])));
+                    exit(EXIT_FAILURE);
+                }
                 END_SECTION("WAIT_X");
 
                 // acu_send_async C -> beta
@@ -625,6 +646,11 @@ int fgls_chol_gpu( FGLS_config_t cf )
             iter++; // TODO: don't need.
 
             // turn aroooouuuund
+            A = (A + 1) % 3;
+            B = (B + 1) % 3;
+            C = (C + 1) % 3;
+            aio_A = (aio_A + 1) % 2;
+            aio_C = (aio_C + 1) % 2;
             a = (a + 1) % 2;
             b = (b + 1) % 2;
         }
