@@ -185,8 +185,8 @@ int fgls_chol_gpu( FGLS_config_t cf )
     size_t L_gpu_bytes = (size_t)cf.n*cf.n * sizeof(double);
 
     // Aswell as for the streamed Xrs.
-    double** Xr_alpha_gpus = fgls_malloc(ngpus*sizeof(double*));
-    double** Xr_beta_gpus = fgls_malloc(ngpus*sizeof(double*));
+    double** Xr_gpus[2] = {fgls_malloc(ngpus*sizeof(double*)), fgls_malloc(ngpus*sizeof(double*))};
+    size_t a = 0, b = 1;
     size_t Xr_gpu_bytes = (size_t)cf.x_b * cf.wXR * cf.n * sizeof(double);
 
     for(igpu = 0 ; igpu < ngpus ; igpu++) {
@@ -195,11 +195,11 @@ int fgls_chol_gpu( FGLS_config_t cf )
             fprintf(stderr, "\n[ERROR] Not enough memory to allocate %ld bytes for L on GPU %d (info: %d)\n", L_gpu_bytes, igpu, cu_error);
             exit(EXIT_FAILURE);
         }
-        if((cu_error = cudaMalloc((void**)&Xr_alpha_gpus[igpu], Xr_gpu_bytes)) != cudaSuccess) {
+        if((cu_error = cudaMalloc((void**)&Xr_gpus[a][igpu], Xr_gpu_bytes)) != cudaSuccess) {
             fprintf(stderr, "\n[ERROR] Not enough memory to allocate %ld bytes for Xr on GPU %d (info: %d)\n", Xr_gpu_bytes, igpu, cu_error);
             exit(EXIT_FAILURE);
         }
-        if((cu_error = cudaMalloc((void**)&Xr_beta_gpus[igpu], Xr_gpu_bytes)) != cudaSuccess) {
+        if((cu_error = cudaMalloc((void**)&Xr_gpus[b][igpu], Xr_gpu_bytes)) != cudaSuccess) {
             fprintf(stderr, "\n[ERROR] Not enough memory to allocate %ld bytes for Xr on GPU %d (info: %d)\n", Xr_gpu_bytes, igpu, cu_error);
             exit(EXIT_FAILURE);
         }
@@ -424,7 +424,7 @@ int fgls_chol_gpu( FGLS_config_t cf )
                 for(igpu = 0 ; igpu < ngpus ; ++igpu) {
                     // TODO(lucasb): sync. Async makes almost no sense and isn't what the paper says.
 //                     cudaSetDevice(igpu);
-//                     if((cu_status = cublasGetVectorAsync(prev_Xr_elems_per_device, sizeof(double), Xr_alpha_gpus[igpu], 1, X[cpu_gpu_buff] + igpu*prev_Xr_elems_per_device, 1, cu_trans_streams[igpu])) != CUBLAS_STATUS_SUCCESS) {
+//                     if((cu_status = cublasGetVectorAsync(prev_Xr_elems_per_device, sizeof(double), Xr_gpus[a][igpu], 1, X[cpu_gpu_buff] + igpu*prev_Xr_elems_per_device, 1, cu_trans_streams[igpu])) != CUBLAS_STATUS_SUCCESS) {
 //                         fprintf(stderr, "\n[ERROR]sending GPU %d's part of inv(L)*Xr to the CPU failed (info: %d)\n", igpu, cu_status);
 //                         exit(EXIT_FAILURE);
 //                     }
@@ -449,7 +449,7 @@ int fgls_chol_gpu( FGLS_config_t cf )
 //                 for(igpu = 0 ; igpu < ngpus ; ++igpu) {
 //                     cudaSetDevice(igpu);
 //                     cublasSetStream(cu_handle, cu_trans_streams[igpu]);
-//                     if((cu_status = cublasSetVectorAsync(Xr_elems_per_device, sizeof(double), X[hdd_cpu_buff]+igpu*Xr_elems_per_device, 1, Xr_alpha_gpus[igpu], 1, cu_trans_streams[igpu])) != CUBLAS_STATUS_SUCCESS) {
+//                     if((cu_status = cublasSetVectorAsync(Xr_elems_per_device, sizeof(double), X[hdd_cpu_buff]+igpu*Xr_elems_per_device, 1, Xr_gpus[a][igpu], 1, cu_trans_streams[igpu])) != CUBLAS_STATUS_SUCCESS) {
 //                         char err[STR_BUFFER_SIZE];
 //                         snprintf(err, STR_BUFFER_SIZE, "sending part of Xr to the GPU %d failed (info: %d)", igpu, cu_status);
 //                         error_msg(err, 1);
@@ -623,6 +623,10 @@ int fgls_chol_gpu( FGLS_config_t cf )
 //			double_buffering_swap( &db_XR );
 			double_buffering_swap( &db_B  );
             iter++; // TODO: don't need.
+
+            // turn aroooouuuund
+            a = (a + 1) % 2;
+            b = (b + 1) % 2;
         }
         /* Swap buffers */
 		double_buffering_swap( &db_Y );
@@ -643,8 +647,8 @@ int fgls_chol_gpu( FGLS_config_t cf )
     for(igpu = 0 ; igpu < ngpus ; ++igpu) {
         cudaSetDevice(igpu);
         cudaFree(L_gpus[igpu]);
-        cudaFree(Xr_alpha_gpus[igpu]);
-        cudaFree(Xr_beta_gpus[igpu]);
+        cudaFree(Xr_gpus[a][igpu]);
+        cudaFree(Xr_gpus[b][igpu]);
     }
     cudaFreeHost(Xr[A]);
     cudaFreeHost(Xr[B]);
@@ -652,8 +656,8 @@ int fgls_chol_gpu( FGLS_config_t cf )
     cublasDestroy(cu_handle);
 
     free(L_gpus);
-    free(Xr_alpha_gpus);
-    free(Xr_beta_gpus);
+    free(Xr_gpus[a]);
+    free(Xr_gpus[b]);
 
     /* Clean-up */
     free( M );
