@@ -244,7 +244,7 @@ int fgls_chol_gpu( FGLS_config_t cf )
     cudaError_t cu_error1 = cudaHostAlloc((void**)&Xr[A], (size_t)cf.x_b * cf.wXR * cf.n * sizeof(double), cudaHostAllocPortable);
     cudaError_t cu_error2 = cudaHostAlloc((void**)&Xr[B], (size_t)cf.x_b * cf.wXR * cf.n * sizeof(double), cudaHostAllocPortable);
     cudaError_t cu_error3 = cudaHostAlloc((void**)&Xr[C], (size_t)cf.x_b * cf.wXR * cf.n * sizeof(double), cudaHostAllocPortable);
-    if(cu_error != cudaSuccess || cu_error2 != cudaSuccess || cu_error3 != cudaSuccess) {
+    if(cu_error1 != cudaSuccess || cu_error2 != cudaSuccess || cu_error3 != cudaSuccess) {
         fprintf(stderr, "\n[ERROR] Not enough memory to allocate page-locked triple buffers (3*%ld MB, info: %d)\n", (size_t)cf.x_b * cf.wXR * cf.n * sizeof(double), cu_error | cu_error2 | cu_error3);
         exit(EXIT_FAILURE);
     }
