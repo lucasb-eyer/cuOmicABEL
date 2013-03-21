@@ -7,24 +7,20 @@
 #include <iostream>
 #include <ctime>
 #include "iout_file.h"
-#include "parameters.h"
-#include "Reshuffle.h"
+#include "Parameters.h"
+#include "reshuffle.h"
 #include <iterator>
 #include "test.h"
-//TODO Create Makefile
 
 using namespace std;
 
 int main(int argc, char* argv[]) {
-	cout << "Every day I'm [re]shuf1fling!" << endl;
+	cout<<"Start reshuffeling"<<endl;
 	Parameters Params(argc, argv);
-	//mkdir("TEST");
 	if(Params.test.use){
-
 		test t_datadims("datadims","--datadims--","datadims.txt","data_4test_check/datadims.txt");
 		t_datadims.run();
 		remove(t_datadims.result.c_str());
-
 		test t_snpnamesdef("snpnamesdef","--snpnames--","snpnames.txt","data_4test_check/snpnamesdef.txt");
 		t_snpnamesdef.run();
 		remove(t_snpnamesdef.result.c_str());
@@ -100,13 +96,19 @@ int main(int argc, char* argv[]) {
 	if(Params.info.use)
 		cout << Params;
 	iout_file iout_F(Params);
-	cout << "finish iout_file read " << double(clock()) / CLOCKS_PER_SEC << endl;
+	cout << "Finish iout_file read\t" << double(clock()) / CLOCKS_PER_SEC <<" sec" << endl;
 	if(Params.info.use){
 		cout<<iout_F.header;
 		cout<<iout_F.labels;
 	}
+	if(Params.traits.use)
+		Params.traits.setbynames(*(iout_F.labels.trait_names));
+	if(Params.snps.use)
+		Params.snps.setbynames(*(iout_F.labels.snp_names));
+	if(Params.heritabilities.use)
+		Params.heritabilities.setbynames(*(iout_F.labels.trait_names));
 	Reshuffle reshh(iout_F,Params);
 	reshh.run();
-	cout << "finish_reshuffling " << double(clock()) / CLOCKS_PER_SEC << endl;
-	return 0;
+	cout << "Finish reshuffling " << double(clock()) / CLOCKS_PER_SEC <<" sec" << endl;
+	return (0);
 }

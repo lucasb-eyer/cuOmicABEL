@@ -7,7 +7,7 @@
 
 #ifndef TEST_H_
 #define TEST_H_
-#include "parameters.h"
+#include "Parameters.h"
 #include "iout_file.h"
 #include "reshuffle.h"
 //#include <dir.h>
@@ -18,10 +18,9 @@ public:
 	string name;
 	string result;
 	string check;
-	Parameters Params;
-
-	Parameters *Params_test=&Params;
+	Parameters *Params_test;//&Paramss;
 	test(string,string,string,string);
 	void run();
 };
-#endif /* TEST_H_ */
+#endif
+/* TEST_H_ */

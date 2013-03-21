@@ -1,30 +1,61 @@
 include ./make.inc
 
 SRCDIR = ./src
-DRIVER = ./HP-GWAS
+RESH_SRCDIR = ./src/reshuffle
+CLAKGWAS  = ./bin/CLAK-GWAS
+RESHUFFLE = ./bin/reshuffle
 
-CFLAGS+=-g -Wall -I $(SRCDIR)/  # -D__WORDSIZE=64
+#QUICK and DIRTY
+CXX=g++
+
+CFLAGS+=-g -O2  -Wall -I $(SRCDIR)/  # -D__WORDSIZE=64
+CXXFLAGS+=-g -O2  -Wall
 LDLIBS += -lm
 
 # Use these if you want GPU support built in too. Requires a valid CUDA install.
 CFLAGS += -DWITH_GPU -I$(CUDA_ROOT)/include
 LDLIBS += -L$(CUDA_ROOT)/lib64 -lcublas
 
-SRCS = $(SRCDIR)/CLAK_GWAS.c $(SRCDIR)/fgls_chol.c $(SRCDIR)/fgls_chol_gpu.c $(SRCDIR)/fgls_eigen.c $(SRCDIR)/wrappers.c $(SRCDIR)/timing.c $(SRCDIR)/statistics.c $(SRCDIR)/REML.c $(SRCDIR)/optimization.c $(SRCDIR)/ooc_BLAS.c $(SRCDIR)/double_buffering.c $(SRCDIR)/utils.c $(SRCDIR)/GWAS.c $(SRCDIR)/databel.c
+SRCS = $(SRCDIR)/CLAK_GWAS.c $(SRCDIR)/fgls_chol.c $(SRCDIR)/fgls_chol_gpu.c $(SRCDIR)/fgls_eigen.c $(SRCDIR)/wrappers.c $(SRCDIR)/timing.c $(SRCDIR)/statistics.c $(SRCDIR)/REML.c $(SRCDIR)/optimization.c $(SRCDIR)/ooc_BLAS.c $(SRCDIR)/double_buffering.c $(SRCDIR)/utils.c $(SRCDIR)/GWAS.c $(SRCDIR)/databel.c 
 OBJS = $(SRCS:.c=.o)
+RESH_SRCS=$(RESH_SRCDIR)/main.cpp $(RESH_SRCDIR)/iout_file.cpp $(RESH_SRCDIR)/Parameters.cpp $(RESH_SRCDIR)/reshuffle.cpp $(RESH_SRCDIR)/test.cpp
+RESH_OBJS = $(RESH_SRCS:.cpp=.o)
 
 .PHONY: all clean
 
-all: $(DRIVER)
+all: ./bin/ $(CLAKGWAS) $(RESHUFFLE) 
 
-$(DRIVER): $(OBJS)
+./bin:
+	mkdir bin
+
+$(CLAKGWAS): $(OBJS)
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDLIBS) -o $@
+
+$(RESHUFFLE): $(RESH_OBJS)
+	cd $(RESH_SRCDIR)
+	$(CXX) $^ -o $@
+
+# Dirty, improve
+platform=Linux
+bindistDir=OmicABEL-$(platform)-bin
+bindist: ./bin/ $(CLAKGWAS) $(RESHUFFLE)
+	rm -rf $(bindistDir)
+	mkdir $(bindistDir)
+	mkdir $(bindistDir)/bin/
+	mkdir $(bindistDir)/doc/
+	cp -a $(CLAKGWAS) $(RESHUFFLE) $(bindistDir)/bin/
+	cp -a COPYING LICENSE README DISCLAIMER.$(platform) $(bindistDir)
+	cp -a doc/README-reshuffle doc/INSTALL doc/HOWTO $(bindistDir)/doc
+	tar -czvf $(bindistDir).tgz $(bindistDir)
+	rm -rf $(bindistDir)
 
 clean:
 	$(RM) $(OBJS)
-	$(RM) $(DRIVER) $(EXE_GPU);
+	$(RM) $(DRIVER) 
 	$(RM) $(SRCDIR)/*mod*
 	$(RM) $(SRCDIR)/*opari_GPU*
+	$(RM) $(RESH_OBJS)
+	$(RM) $(RESHUFFLE)
 
 
 src/CLAK_GWAS.o: src/CLAK_GWAS.c src/wrappers.h src/utils.h src/GWAS.h \

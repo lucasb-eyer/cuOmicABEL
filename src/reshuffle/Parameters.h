@@ -11,6 +11,7 @@
 #include <iostream>
 #include <string>
 #include <set>
+#include <vector>
 using namespace std;
 
 class Parameter {
@@ -19,10 +20,13 @@ public:
 	string name; 	//name of parametr
 	bool use; 	// Parameter use or not (Is paameter in command line?)
 	string value; 	// value of parametr,chars after "=" symbol
-	Parameter(string,string); 	//constructor
-	Parameter();		//default constructor
-	set<int> valueset;
+	set<int> numbersset;
+	set<string> namesset;
 	string delfromcmdline(string);
+	void setbynames(vector<string>);
+	string outfile;
+	Parameter(string,string,string); 	//constructor
+	Parameter();		//default constructor
 };
 
 ostream &operator <<(ostream &, Parameter);
@@ -44,6 +48,7 @@ public:
 	Parameters();
 	Parameters(int, char*[]);		//	Constructor from cmdline
 	static string get_cmd_line(int,char*[]);
+	bool defaultstate;//Check: are there parameters instead of infile's path
 
 };
 

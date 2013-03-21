@@ -1,0 +1,30 @@
+1. Pre-requisites
+------------------
+
+  Our software requires the BLAS and LAPACK. If they are not available
+  in your system, you can freely download them, for example, from:
+
+  * BLAS: http://xianyi.github.com/OpenBLAS/
+  * LAPACK: http://netlib.org/lapack/#_software
+
+  Their installation is typically rather straightforward.
+
+  Please, keep in mind that it is important to install an optimized
+  version of BLAS, be it OpenBLAS or a different one.
+
+
+2. Compiling
+-------------
+
+  The file make.inc sets a number of environment variables necessary
+  for the compilation. The directory inc/ contains several versions of
+  make.inc, customized for different combinations of architectures, 
+  compilers, and libraries. Choose the most suitable one for you, and 
+  overwrite the file make.inc with it. For instance, if you chose to 
+  install the BLAS and LAPACK libraries linked above in a linux 
+  machine, select the file "make.inc.gnu-goto". You will need to set 
+  the paths to the aforementioned libraries in your system.
+  
+  Once the make.inc file is ready, you can compile the code. Simply 
+  type "make" and it will create the binaries "CLAK-GWAS" and 
+  "reshuffle" in the bin/ directory.

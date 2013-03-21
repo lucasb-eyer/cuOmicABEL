@@ -14,4 +14,31 @@ ver 0.002
 		heritabilities->estimates.txt
 		dataslim,chi->slim_data.txt
 		
+ver 0.003
+	bug in traitsbynames test fixed
+	Write data by trait's names
+	Write data by snp's names
+	Write estimates by trait's names
+	All combinations with this parameters
+	Write data by snp's name and snps around it 
+	Write data by regexp in the begining of trait's	names
+	
+ver 0.004
+	makefile
+	resolved problem of compiling in Linux/MacOS X systems
+	
+ver 0.005
+	output corrected
+		in data/chi_data/slim_data column names are 
+			SNP TRAIT ... ... ... (Chi) 
+ver 0.006
+	default output
+		if there are no input parameters(only file's path) output is whole data 
+	you can set outfile's name for all parameters. Like this
+		./reshuffle.exe --datadims=file=datadimension.txt : output >> datadimension.txt
+		./reshuffle.exe --datadslim=file=very_slim_data.txt--chi=20	: output >> very_slim_data.txt
+		default file's name are as previous 
+	some changes in info messages
+	
+		
 		

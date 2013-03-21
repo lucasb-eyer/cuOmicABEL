@@ -86,9 +86,9 @@ int main( int argc, char *argv[] )
 	/*exit(EXIT_FAILURE);*/
 	/*}*/
 	
-	printf("\n**************************************************************************\n");
-	printf("*** This is an alpha version under development. Use it at your own risk!!!\n");
-	printf("**************************************************************************\n\n");
+	/*printf("\n**************************************************************************\n");*/
+	/*printf("*** This is an alpha version under development. Use it at your own risk!!!\n");*/
+	/*printf("**************************************************************************\n\n");*/
 	print_info( &cf );
 
 	// Compute h and sigma
@@ -149,22 +149,23 @@ int main( int argc, char *argv[] )
 
 void usage( void ) 
 {
-    fprintf(stderr, "\nUsage: HP-GWAS [options]\n\n");
-    fprintf(stderr, "Following options may be given:\n\n");
+    fprintf(stderr, "\nUsage: CLAK-GWAS <arguments> [options]\n\n");
+    fprintf(stderr, "Following arguments are mandatory:\n\n");
+    fprintf(stderr, "  -cov <path>    base path to the file containing the covariates\n");
+    fprintf(stderr, "  -phi <path>    base path to the file containing the relationship matrix\n");
+    fprintf(stderr, "  -snp <path>    base path to the file containing the SNPs\n");
+    fprintf(stderr, "  -pheno <path>  base path to the file containing the phenotypes\n");
+    fprintf(stderr, "  -out <path>    base path to the file where the output will be stored\n\n");
+    fprintf(stderr, "Following options might be given:\n\n");
 #ifdef WITH_GPU
-    fprintf(stderr, "  -var     [chol | chol_gpu | eigen] Default is chol.\n");
+    fprintf(stderr, "  -var [chol | chol_gpu | eigen] Default is chol.\n");
 #else
-    fprintf(stderr, "  -var     [chol | eigen] Default is chol.\n");
+    fprintf(stderr, "  -var [chol | chol_gpu | eigen] Default is chol.\n");
 #endif
-    fprintf(stderr, "  -cov     base path to covariates file \n");
-    fprintf(stderr, "  -phi     base path to kinship? file \n");
-    fprintf(stderr, "  -snp     base path to SNPs file \n");
-    fprintf(stderr, "  -pheno   base path to phenotypes file \n");
-    fprintf(stderr, "  -out     base path to output file \n");
-    fprintf(stderr, "  -nths    # Default is 1 thread.\n");
-    fprintf(stderr, "  -thres   # Default is 95%%.\n");
+    fprintf(stderr, "  -nths <num>         Default is 1 thread.\n");
+    fprintf(stderr, "  -thres <num>        Default is 95(%%).\n");
 	/*fprintf(stderr, "  -no-output               Default is to write the output files.\n");*/
-    fprintf(stderr, "  -h       Show this help and exit\n\n");
+    fprintf(stderr, "  -h                  Show this help and exit\n\n");
 }
 
 int parse_input( int argc, char *argv[], char *var, 
@@ -392,16 +393,17 @@ void check_input_integrity( FGLS_config_t *cf, char *var,
 	
 	// Paths provided?
 	if ( strcmp( phi_base, "" ) == 0 || strcmp( cov_base, "" ) == 0 || 
-			strcmp( snp_base, "" ) == 0 || strcmp( pheno_base, "" ) == 0 )
+			 strcmp( snp_base, "" ) == 0 || strcmp( pheno_base, "" ) == 0 ||
+			(strcmp( out_base, "" ) == 0 && write_output) )
 	{
-		fprintf( stderr, "You must provide all of -cov -phi -snp -pheno\n\n" );
+		fprintf( stderr, "You must provide all mandatory arguments (see -h option for details)\n\n" );
 		exit( EXIT_FAILURE );
 	}
-	if ( strcmp( out_base, "" ) == 0 && write_output )
-	{
-		fprintf( stderr, "Output base path required\n\n" );
-		exit( EXIT_FAILURE );
-	}
+//	if ( strcmp( out_base, "" ) == 0 && write_output )
+//	{
+//		fprintf( stderr, "Output base path required (see -h option for details)\n\n" );
+//		exit( EXIT_FAILURE );
+//	}
 			
 	// Phi data
     snprintf( cf->Phi_data_path, STR_BUFFER_SIZE, "%s.fvd", phi_base );
@@ -510,13 +512,13 @@ void print_info( FGLS_config_t *cf )
 	fflush( stdout );
 
 	if ( !strcmp( cf->var, "chol" ) )
-		printf( "\nWill use OmicABEL-Chol with the following parameters\n" );
+		printf( "\nWill use CLAK-Chol with the following parameters:\n" );
 #ifdef WITH_GPU
 	else if ( !strcmp( cf->var, "chol_gpu" ) )
-		printf( "\nWill use OmicABEL-Chol on GPU(s) with the following parameters\n" );
+		printf( "\nWill use CLAK-Chol on GPU(s) with the following parameters:\n" );
 #endif
 	else
-		printf( "\nWill use OmicABEL-Eigen with the following parameters:\n" );
+		printf( "\nWill use CLAK-Eig with the following parameters:\n" );
 	printf( "  x_b: %zu\n", cf->x_b );
 	printf( "  y_b: %zu\n", cf->y_b );
 	printf( "  o_b: %zu\n", cf->ooc_b );
