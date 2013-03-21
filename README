@@ -1,0 +1,54 @@
+CLAK-GWAS is a software for performing Genome-Wide Association Studies
+(GWAS). It provides a high-performance implementation of two 
+algorithms, CLAK-Chol and CLAK-Eig, for GWAS involving single and 
+multiple phenotypes, respectively. 
+
+0. LICENSE
+-----------
+
+OmicABEL is distributed under the GNU GENERAL PUBLIC LICENSE v.3 or later
+A copy of the license is available in the file ''COPYING''
+
+
+1. INSTALLATION
+----------------
+
+Please see the doc/INSTALL file. 
+
+Note that if you downloaded one of the binary versions, no 
+installation is needed.
+
+
+2. USING CLAK-GWAS
+-------------------
+
+Please see the doc/HOWTO file.
+
+
+3. KNOWN ISSUES
+----------------
+
+3.1  For the sake of ease-of-use, CLAK-GWAS automatically performs
+     a number of system checks and tries to maximize performance.
+     Should you experience any unexpected behavior, please contact us
+     ( fabregat [at] aices [dot] rwth-aachen [dot] de ); we will attend 
+     your request as soon as possible.
+
+3.2  Currently, the input data must consist of double precision entries, 
+     organized according to the DatABEL (filevector) data format.
+     We are working on the support for more datatypes.
+
+
+4. CONTACT
+-----------
+
+For any question, request, suggestion, or comment, please contact us:
+
+Diego Fabregat Traver,  fabregat [at] aices [dot] rwth-aachen [dot] de
+Paolo Bientinesi,       pauldj   [at] aices [dot] rwth-aachen [dot] de
+Yurii Aulchenko,        yurii [dot] aulchenko [at] gmail [dot] com
+
+You can also seek help in our forum: http://forum.genabel.org/
+
+
+Happy GWASing!

@@ -7,7 +7,7 @@
 
 #ifndef RESHUFFLE_H_
 #define RESHUFFLE_H_
-#include "parameters.h"
+#include "Parameters.h"
 #include "iout_file.h"
 
 using namespace std;
@@ -24,10 +24,10 @@ public:
 	void write_datadims(ofstream&);
 	void write_snpnames(ofstream&);
 	void write_traitnames(ofstream&);
-	void write_data(ifstream&);
-	void write_data_chi(ifstream&);
-	void write_slim_data(ifstream&);
-	void write_herest(ifstream&);
+	void write_data(ifstream&,ofstream&);
+	void write_data_chi(ifstream&,ofstream&);
+	void write_slim_data(ifstream&,ofstream&);
+	void write_herest(ifstream&,ofstream&);
 	int herest_startpos;
 	int est_shift(int);
 	int est_beta_shift(int);

@@ -1,0 +1,2 @@
+all:
+	g++ main.cpp iout_file.cpp Parameters.cpp reshuffle.cpp test.cpp -Wall -o reshuffle

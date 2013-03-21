@@ -1,0 +1,86 @@
+1. Who is Whom
+---------------
+
+In the directory bin/, you find the following executables:
+
+* CLAK-GWAS: the program to run GWAS analyses (through CLAK-Chol or CLAK-Eig)
+* reshuffle: the program to extract the output of CLAK-GWAS into text format
+
+The output produced by CLAK-GWAS is kept in a compact binary format
+for performance reasons. The user can then use "reshuffle" to
+extract the desired information. Since the output may be very large,
+reshuffle allows the selection of specific ranges of SNPs and traits.
+
+
+2. Preparing your data
+-----------------------
+
+Currently, as input CLAK-GWAS only accepts data files in the DatABEL
+(filevector) format. Examples of how to transform your data into 
+filevector are given in the tutorial available at
+
+http://www.genabel.org/packages/OmicABEL
+
+If you need help, please contact us, or use the GenABEL project forum
+
+http://forum.genabel.org
+
+
+3. Running GWAS analyses
+-------------------------
+
+The tutorial available at
+
+http://www.genabel.org/packages/OmicABEL
+
+also provides a basic example on the use of OmicABEL to run GWAS analyses.
+Here we detail the options of CLAK-GWAS. The complete list of options is 
+available through the command
+
+
+The example in the tutorial also provides a basic example on using OmicABEL
+to run your GWAS analyses. Here we detail the options of CLAK-GWAS. 
+The complete list of options for CLAK-GWAS is avaliable through the command
+
+./CLAK-GWAS -h
+
+Usage: CLAK-GWAS <arguments> [options]
+
+Following arguments are mandatory:
+
+  -cov <path>    base path to the file containing the covariates
+  -phi <path>    base path to the file containing the relationship matrix
+  -snp <path>    base path to the file containing the SNPs
+  -pheno <path>  base path to the file containing the phenotypes
+  -out <path>    base path to the file where the output will be stored
+
+Following options might be given:
+
+  -var [chol | eigen] Default is chol.
+  -nths <num>         Default is 1 thread.
+  -thres <num>        Default is 95(%).
+  -h                  Show this help and exit
+
+
+* The option "-var" selects the algorithm to use:
+   "chol" forces CLAK-GWAS to use the CLAK-Chol algorithm (recommended for 
+          single-phenotype GWAS).
+   "eigen" forces CLAK-GWAS to use the CLAK-Eig algorithms (recommended for
+          multiple-phenotype GWAS).
+
+* "-cov", "-phi", "-snp", "-pheno" are used to specify the input files
+          for the analysis. If the covariates are stored in the pair of
+          file "covs.fvd" and "covs.fvi", the option -cov
+          is used as: "-cov covs". Same for the other three options.
+
+* "-out" is used to specify the output file(s)
+
+* "-nths" allows the user to specify how many cores to use.
+
+* "-thres" is used to specify the acceptable proportion of missing values. 
+           It must be an integer value between 1 and 100.
+           (the missing values are imputed by means, therefore our suggestion 
+		   is to keep this threshold at 95 at minimum).
+
+
+For a detailed description of "reshuffle", please refer to doc/README-reshuffle
