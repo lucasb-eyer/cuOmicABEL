@@ -3,21 +3,21 @@
  * All rights reserved.
  *
  * This file is part of OmicABEL.
- * 
+ *
  * OmicABEL is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * OmicABEL is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with OmicABEL. If not, see <http://www.gnu.org/licenses/>.
- * 
- * 
+ *
+ *
  * Coded by:
  *   Diego Fabregat-Traver (fabregat@aices.rwth-aachen.de)
  *   Lucas Beyer (lucas-b.eyer.be)
@@ -74,7 +74,7 @@ static void end_section(struct timeval* t_start, int ngpus, const char* vt_id);
 #endif
 
 /*
- * Builds Phi as an SPD matrix, after the eigenvalues were fixed 
+ * Builds Phi as an SPD matrix, after the eigenvalues were fixed
  * during the REML estimation
  */
 void build_SPD_Phi( int n, double *eigVecs, double *eigVals, double *Phi );
@@ -85,7 +85,7 @@ static size_t xr_blocklen(size_t blocklen, size_t totallen, size_t iblock)
 }
 
 /*
- * Cholesky-based GPU solution of the 
+ * Cholesky-based GPU solution of the
  *  sequence of Feasible Generalized Least-Squares problem
  *  in the context of GWAS:
  */
@@ -330,7 +330,7 @@ int fgls_chol_gpu( FGLS_config_t cf )
         /* y := inv(L) * y */
 		Y_comp = double_buffering_get_comp_buffer( &db_Y );
 		// Sanity check
-		average( Y_comp, n, 1, cf.threshold, "TRAIT", 
+		average( Y_comp, n, 1, cf.threshold, "TRAIT",
 				&cf.Y_fvi->fvi_data[n*NAMELENGTH], NAMELENGTH, 0 );
         dtrsv_(LOWER, NO_TRANS, NON_UNIT, &n, M, &n, Y_comp, &iONE);
 
@@ -484,7 +484,7 @@ int fgls_chol_gpu( FGLS_config_t cf )
 // #endif
 //             /* Read next block of XR's */
 // 			size_t next_x_from = ((size_t)ib + x_b) >= m ?  0 : (size_t)ib + x_b;
-// 			size_t next_x_to   = ((size_t)ib + x_b) >= m ? MIN( (size_t)x_b, (size_t)m ) - 1 : 
+// 			size_t next_x_to   = ((size_t)ib + x_b) >= m ? MIN( (size_t)x_b, (size_t)m ) - 1 :
 // 				                                           next_x_from + MIN( (size_t)x_b, (size_t)m - next_x_from ) - 1;
 // 			double_buffering_read_XR( &db_XR, IO_BUFF, next_x_from, next_x_to );
 // #if VAMPIR
@@ -513,7 +513,7 @@ int fgls_chol_gpu( FGLS_config_t cf )
             int x_inc = MIN(x_b, m - ib);
             int rhss  = wXR * x_inc;
 			// Sanity check
-			average( XR_comp, n, x_inc, cf.threshold, "SNP", 
+			average( XR_comp, n, x_inc, cf.threshold, "SNP",
 					&cf.XR_fvi->fvi_data[(n+ib)*NAMELENGTH], NAMELENGTH, 1 );
 			// Computation
             dtrsm_(LEFT, LOWER, NO_TRANS, NON_UNIT, &n, &rhss, &ONE, M, &n, XR_comp, &n);
@@ -560,9 +560,9 @@ int fgls_chol_gpu( FGLS_config_t cf )
                 // Copy B_T
                 memcpy(oneB, B_t, wXL * sizeof(double));
                 // B_B := XR' * y
-                dgemv_("T", 
-                        &n, &wXR, 
-                        &ONE, &XR_comp[i * wXR * n], &n, Y_comp, &iONE, 
+                dgemv_("T",
+                        &n, &wXR,
+                        &ONE, &XR_comp[i * wXR * n], &n, Y_comp, &iONE,
                         &ZERO, &oneB[wXL], &iONE);
 
                 // Building V
@@ -575,9 +575,9 @@ int fgls_chol_gpu( FGLS_config_t cf )
                         &ONE, &XR_comp[i * wXR * n], &n, XL, &n,
                         &ZERO, &oneV[wXL], &p); // V_BL
                 // V_BR := XR' * XR
-                dsyrk_("L", "T", 
-                        &wXR, &n, 
-                        &ONE, &XR_comp[i * wXR * n], &n, 
+                dsyrk_("L", "T",
+                        &wXR, &n,
+                        &ONE, &XR_comp[i * wXR * n], &n,
                         &ZERO, &oneV[wXL * p + wXL], &p); // V_BR
 
                 // B := inv(V) * B
