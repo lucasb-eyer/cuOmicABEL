@@ -84,6 +84,16 @@ static size_t xr_blocklen(size_t blocklen, size_t totallen, size_t iblock)
     return MIN(blocklen, totallen - (iblock)*blocklen);
 }
 
+static const char* to_black   = "\033[0;30m";
+static const char* to_red     = "\033[0;31m";
+static const char* to_green   = "\033[0;32m";
+static const char* to_yellow  = "\033[0;33m";
+static const char* to_blue    = "\033[0;34m";
+static const char* to_magenta = "\033[0;35m";
+static const char* to_cyan    = "\033[0;36m";
+static const char* to_white   = "\033[0;37m";
+static const char* to_fg      = "\033[0;39m";
+
 /*
  * Cholesky-based GPU solution of the
  *  sequence of Feasible Generalized Least-Squares problem
@@ -367,12 +377,12 @@ int fgls_chol_gpu( FGLS_config_t cf )
         int iblock = 0;
         for (iblock = -1 ; iblock <= blockcount+1 ; ++iblock)
         {
-            // cu_trsm_wait alpha
+            // cu_trsm_wait beta (previously alpha)
             // Wait for the previous GPU computation to be done...
             // (The first GPU computation happens at i == 1 thus we first wait at i == 2)
             // (bordeaux dependency, also implied by single lifeline of GPU.)
             if(2 <= iblock) {
-                START_SECTION2("GPU_trsm", "%d: Waiting for the trsms (%d) on the GPUs to be done", iblock, iblock-1);
+                START_SECTION2("GPU_trsm", "%d: cu_trsm_wait %s%d%s", iblock, to_green, b, to_fg);
 //                 for(igpu = 0 ; igpu < ngpus ; ++igpu) {
 //                     // cudaSetDevice(igpu); // Unnecessary according to "cuda_webinar_multi_gpu.pdf", p. 6
 //                     cudaStreamSynchronize(cu_comp_streams[igpu]);
@@ -380,11 +390,11 @@ int fgls_chol_gpu( FGLS_config_t cf )
                 END_SECTION("GPU_trsm");
             }
 
-            // cu_send_wait C -> beta
+            // cu_send_wait B -> alpha (previously C -> beta)
             // wait for the sending of the previous data-block to the GPU to be done.
             // (olive dependency)
             if(1 <= iblock && iblock <= blockcount) {
-                START_SECTION2("GPU_send_Xr", "%d: Waiting for the sending of Xr (%d) parts to the GPUs to be done", iblock, iblock);
+                START_SECTION2("GPU_send_Xr", "%d: cu_send_wait %s%d%s -> %s%d%s", iblock, to_red, B, to_fg, to_green, a, to_fg);
 //                 for(igpu = 0 ; igpu < ngpus ; ++igpu) {
 //                     cudaStreamSynchronize(cu_trans_streams[igpu]);
 //                 }
@@ -394,7 +404,7 @@ int fgls_chol_gpu( FGLS_config_t cf )
             // alpha <- cu-trsm_async L_gpu, alpha
             // dispatch the TRSM on the GPU for the block which was just sent there.
             if(1 <= iblock && iblock <= blockcount) {
-                START_SECTION2("GPU_trsm", "%d: Starting the trsms (%d) on the GPUs", iblock, iblock);
+                START_SECTION2("GPU_trsm", "%d: %s%d%s <- cu_trsm_async (block %d)", iblock, to_green, a, to_fg, iblock);
                 int curr_Xr_block_length = MIN(x_b, m - (iblock-1)*x_b);
                 int rhss  = wXR * curr_Xr_block_length;
 
@@ -414,7 +424,7 @@ int fgls_chol_gpu( FGLS_config_t cf )
             // aio_read Xr[b+2] -> A
             // Read the second-next block from HDD to main memory.
             if(iblock <= blockcount-2) {
-                START_SECTION2("READ_X", "%d: Starting the read of the Xr block (%d)", iblock, iblock+2);
+                START_SECTION2("READ_X", "%d: aio_read Xr[%s%d%s] -> %s%d%s", iblock, to_yellow, iblock+2, to_fg, to_red, A, to_fg);
                 memset(&aio_Xr[aio_A], 0, sizeof(aio_Xr[aio_A]));
                 aio_Xr[aio_A].aio_fildes = fileno(cf.XR);
                 aio_Xr[aio_A].aio_buf = Xr[A];
@@ -431,7 +441,7 @@ int fgls_chol_gpu( FGLS_config_t cf )
             // synchronuously get the results of the previous TRSM, sync since
             // we need them for further computation anyway.
             if(2 <= iblock) {
-                START_SECTION2("GPU_recv_LXr", "%d: Getting inv(L) * Xr (%d) back to the CPU", iblock, iblock-1);
+                START_SECTION2("GPU_recv_LXr", "%d: cu_recv %s%d%s <- %s%d%s (%.2f MB)", iblock, to_red, B, to_fg, to_green, b, to_fg, xr_elems_per_device(x_b, m, wXR, n, iblock-1, ngpus, 0)*sizeof(double)/1024.0/1024.0);
                 //size_t prev_Xr_elems_per_device = prev_Xr_block_length*wXR*n/ngpus;
                 for(igpu = 0 ; igpu < ngpus ; ++igpu) {
                     // TODO(lucasb): sync. Async makes almost no sense and isn't what the paper says.
@@ -450,7 +460,7 @@ int fgls_chol_gpu( FGLS_config_t cf )
             // the GPU so that it can be TRSMed in the next iteration.
             // (blue dependency)
             if(0 <= iblock && iblock <= blockcount-1) {
-                START_SECTION2("WAIT_X", "%d: Waiting for the Xr block's (%d) arrival in main memory with departure from HDD. Weight is %.2f MB", iblock, iblock+1, aio_Xr[aio_C].aio_nbytes/1024.0/1024.0);
+                START_SECTION2("WAIT_X", "%d: aio_wait Xr[%s%d%s] -> %s%d%s (%.2f MB)", iblock, to_yellow, iblock+1, to_fg, to_red, C, to_fg, aio_Xr[aio_C].aio_nbytes/1024.0/1024.0);
                 if(aio_suspend((const struct aiocb* const[]){&aio_Xr[aio_C]}, 1, NULL) != 0) {
                     fprintf(stderr, "\n[ERROR] Couldn't wait for asynchronuous read! (%s)\n", strerror(errno));
                     exit(EXIT_FAILURE);
@@ -463,9 +473,9 @@ int fgls_chol_gpu( FGLS_config_t cf )
                 }
                 END_SECTION("WAIT_X");
 
-                // acu_send_async C -> beta
+                // cu_send_async C -> beta
                 // send the next X-block we just waited for to the GPU.
-                START_SECTION2("GPU_send_Xr", "%d: Distributing the Xr block (%d) equally amongst the %d GPUs", iblock, iblock+1, ngpus);
+                START_SECTION2("GPU_send_Xr", "%d: cu_send_async %s%d%s -> %s%d%s (x%d)", iblock, to_red, C, to_fg, to_green, b, to_fg, ngpus);
 //                 size_t Xr_elems_per_device = n*(wXR*x_b)/ngpus;
 //                 for(igpu = 0 ; igpu < ngpus ; ++igpu) {
 //                     cudaSetDevice(igpu);
@@ -530,7 +540,7 @@ int fgls_chol_gpu( FGLS_config_t cf )
             // Perform the "remaining" computations using the previous TRSM's
             // result on the CPU and then schedule their writing to HDD.
             if(2 <= iblock) {
-                START_SECTION2("COMP_I", "%d: Computing the S-loop of block %d", iblock, iblock-1);
+                START_SECTION2("COMP_I", "%d: S-loop %s%d%s", iblock, to_red, B, to_fg);
 //                sloop(out_r, Xr_block, Xl, y, Stl);
                 END_SECTION("COMP_I");
             }
