@@ -685,11 +685,16 @@ int fgls_chol_gpu( FGLS_config_t cf )
         cudaFree(L_gpus[igpu]);
         cudaFree(Xr_gpus[a][igpu]);
         cudaFree(Xr_gpus[b][igpu]);
+        cudaStreamDestroy(cu_trans_streams[igpu]);
+        cudaStreamDestroy(cu_comp_streams[igpu]);
     }
     cudaFreeHost(Xr[A]);
     cudaFreeHost(Xr[B]);
     cudaFreeHost(Xr[C]);
     cublasDestroy(cu_handle);
+
+    free(cu_trans_streams);
+    free(cu_comp_streams);
 
     free(L_gpus);
     free(Xr_gpus[a]);
