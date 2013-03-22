@@ -405,8 +405,7 @@ int fgls_chol_gpu( FGLS_config_t cf )
             // dispatch the TRSM on the GPU for the block which was just sent there.
             if(1 <= iblock && iblock <= blockcount) {
                 START_SECTION2("GPU_trsm", "%d: %s%d%s <- cu_trsm_async (block %d)", iblock, to_green, a, to_fg, iblock);
-                int curr_Xr_block_length = MIN(x_b, m - (iblock-1)*x_b);
-                int rhss  = wXR * curr_Xr_block_length;
+                int rhss  = wXR * xr_blocklen(x_b, m, iblock-1);
 
                 // TODO(lucasb): sanity check! (call to average, replaces NaNs by avg.)
 
