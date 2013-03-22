@@ -401,9 +401,10 @@ int fgls_chol_gpu( FGLS_config_t cf )
             // (olive dependency)
             if(1 <= iblock && iblock <= blockcount) {
                 START_SECTION2("GPU_send_Xr", "%d: cu_send_wait %s%d%s -> %s%d%s", iblock, to_red, B, to_fg, to_green, a, to_fg);
-//                 for(igpu = 0 ; igpu < ngpus ; ++igpu) {
-//                     cudaStreamSynchronize(cu_trans_streams[igpu]);
-//                 }
+                for(igpu = 0 ; igpu < ngpus ; ++igpu) {
+                    // Unnecessary to cudaSetDevice, according to "cuda_webinar_multi_gpu.pdf", p. 6
+                    cudaStreamSynchronize(cu_trans_streams[igpu]);
+                }
                 END_SECTION("GPU_send_Xr");
             }
 
@@ -447,14 +448,18 @@ int fgls_chol_gpu( FGLS_config_t cf )
             // we need them for further computation anyway.
             if(2 <= iblock) {
                 START_SECTION2("GPU_recv_LXr", "%d: cu_recv %s%d%s <- %s%d%s (%.2f MB)", iblock, to_red, B, to_fg, to_green, b, to_fg, xr_elems_per_device(x_b, m, wXR, n, iblock-1, ngpus, 0)*sizeof(double)/1024.0/1024.0);
-                //size_t prev_Xr_elems_per_device = prev_Xr_block_length*wXR*n/ngpus;
+                double* XrB = Xr[B];
                 for(igpu = 0 ; igpu < ngpus ; ++igpu) {
-                    // TODO(lucasb): sync. Async makes almost no sense and isn't what the paper says.
-//                     cudaSetDevice(igpu);
-//                     if((cu_status = cublasGetVectorAsync(prev_Xr_elems_per_device, sizeof(double), Xr_gpus[a][igpu], 1, X[cpu_gpu_buff] + igpu*prev_Xr_elems_per_device, 1, cu_trans_streams[igpu])) != CUBLAS_STATUS_SUCCESS) {
-//                         fprintf(stderr, "\n[ERROR]sending GPU %d's part of inv(L)*Xr to the CPU failed (info: %d)\n", igpu, cu_status);
-//                         exit(EXIT_FAILURE);
-//                     }
+                    cudaSetDevice(igpu);
+                    cublasSetStream(cu_handle, cu_trans_streams[igpu]);
+                    // Getting this in sync since we'll use it right away; see paper/thesis for details.
+                    size_t nelems = xr_elems_per_device(x_b, m, wXR, n, iblock-1, ngpus, igpu);
+                    fprintf(stderr, "cublasGetVector(nelems=%lu, sizeof(double)=%lu, Xr_gpus[b=%lu][igpu=%d]=%p, 1, XrB=%p, 1)\n", nelems, sizeof(double), b, igpu, Xr_gpus[b][igpu], XrB);
+                    if((cu_status = cublasGetVector(nelems, sizeof(double), Xr_gpus[b][igpu], 1, XrB, 1)) != CUBLAS_STATUS_SUCCESS) {
+                        fprintf(stderr, "\n[ERROR] Couldn't get results from GPU %d! (info: %d, nelems=%lu)\n", igpu, cu_status, nelems);
+                        exit(EXIT_FAILURE);
+                    }
+                    XrB += nelems;
                 }
                 END_SECTION("GPU_recv_LXr");
             }
@@ -481,16 +486,17 @@ int fgls_chol_gpu( FGLS_config_t cf )
                 // cu_send_async C -> beta
                 // send the next X-block we just waited for to the GPU.
                 START_SECTION2("GPU_send_Xr", "%d: cu_send_async %s%d%s -> %s%d%s (x%d)", iblock, to_red, C, to_fg, to_green, b, to_fg, ngpus);
-//                 size_t Xr_elems_per_device = n*(wXR*x_b)/ngpus;
-//                 for(igpu = 0 ; igpu < ngpus ; ++igpu) {
-//                     cudaSetDevice(igpu);
-//                     cublasSetStream(cu_handle, cu_trans_streams[igpu]);
-//                     if((cu_status = cublasSetVectorAsync(Xr_elems_per_device, sizeof(double), X[hdd_cpu_buff]+igpu*Xr_elems_per_device, 1, Xr_gpus[a][igpu], 1, cu_trans_streams[igpu])) != CUBLAS_STATUS_SUCCESS) {
-//                         char err[STR_BUFFER_SIZE];
-//                         snprintf(err, STR_BUFFER_SIZE, "sending part of Xr to the GPU %d failed (info: %d)", igpu, cu_status);
-//                         error_msg(err, 1);
-//                     }
-//                 }
+                double* XrC = Xr[C];
+                for(igpu = 0 ; igpu < ngpus ; ++igpu) {
+                    cudaSetDevice(igpu);
+                    cublasSetStream(cu_handle, cu_trans_streams[igpu]);
+                    size_t nelems = xr_elems_per_device(x_b, m, wXR, n, iblock+1, ngpus, igpu);
+                    if((cu_status = cublasSetVectorAsync(nelems, sizeof(double), XrC, 1, Xr_gpus[b][igpu], 1, cu_trans_streams[igpu])) != CUBLAS_STATUS_SUCCESS) {
+                        fprintf(stderr, "\n[ERROR] Sending part of Xr to the GPU %d failed (info: %d, nelems=%lu)\n", igpu, cu_status, nelems);
+                        exit(EXIT_FAILURE);
+                    }
+                    XrC += nelems;
+                }
                 END_SECTION("GPU_send_Xr");
             }
 
