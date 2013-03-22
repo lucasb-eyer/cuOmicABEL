@@ -84,6 +84,12 @@ static size_t xr_blocklen(size_t blocklen, size_t totallen, size_t iblock)
     return MIN(blocklen, totallen - (iblock)*blocklen);
 }
 
+static size_t xr_elems_per_device(size_t blocklen, size_t totallen, size_t wXR, size_t n, size_t iblock, size_t ngpus, size_t igpu)
+{
+    // TODO(lucasb): stop assuming that this thing is divisible by ngpus.
+    return xr_blocklen(blocklen, totallen, iblock) * wXR * n / ngpus;
+}
+
 static const char* to_black   = "\033[0;30m";
 static const char* to_red     = "\033[0;31m";
 static const char* to_green   = "\033[0;32m";
@@ -203,20 +209,20 @@ int fgls_chol_gpu( FGLS_config_t cf )
     // Aswell as for the streamed Xrs.
     double** Xr_gpus[2] = {fgls_malloc(ngpus*sizeof(double*)), fgls_malloc(ngpus*sizeof(double*))};
     size_t a = 0, b = 1;
-    size_t Xr_gpu_bytes = (size_t)cf.x_b * cf.wXR * cf.n * sizeof(double);
 
     for(igpu = 0 ; igpu < ngpus ; igpu++) {
+        size_t Xr_elems = xr_elems_per_device(cf.x_b, cf.m, cf.wXR, cf.n, 0, ngpus, igpu);
         cudaSetDevice(igpu);
         if((cu_error = cudaMalloc((void**)&L_gpus[igpu], L_gpu_bytes)) != cudaSuccess) {
             fprintf(stderr, "\n[ERROR] Not enough memory to allocate %ld bytes for L on GPU %d (info: %d)\n", L_gpu_bytes, igpu, cu_error);
             exit(EXIT_FAILURE);
         }
-        if((cu_error = cudaMalloc((void**)&Xr_gpus[a][igpu], Xr_gpu_bytes)) != cudaSuccess) {
-            fprintf(stderr, "\n[ERROR] Not enough memory to allocate %ld bytes for Xr on GPU %d (info: %d)\n", Xr_gpu_bytes, igpu, cu_error);
+        if((cu_error = cudaMalloc((void**)&Xr_gpus[a][igpu], Xr_elems*sizeof(double))) != cudaSuccess) {
+            fprintf(stderr, "\n[ERROR] Not enough memory to allocate %ld bytes for Xr on GPU %d (info: %d)\n", Xr_elems*sizeof(double), igpu, cu_error);
             exit(EXIT_FAILURE);
         }
-        if((cu_error = cudaMalloc((void**)&Xr_gpus[b][igpu], Xr_gpu_bytes)) != cudaSuccess) {
-            fprintf(stderr, "\n[ERROR] Not enough memory to allocate %ld bytes for Xr on GPU %d (info: %d)\n", Xr_gpu_bytes, igpu, cu_error);
+        if((cu_error = cudaMalloc((void**)&Xr_gpus[b][igpu], Xr_elems*sizeof(double))) != cudaSuccess) {
+            fprintf(stderr, "\n[ERROR] Not enough memory to allocate %ld bytes for Xr on GPU %d (info: %d)\n", Xr_elems*sizeof(double), igpu, cu_error);
             exit(EXIT_FAILURE);
         }
     }
