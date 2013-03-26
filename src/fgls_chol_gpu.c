@@ -450,14 +450,19 @@ int fgls_chol_gpu( FGLS_config_t cf )
                 double* XrB = Xr[B];
                 for(igpu = 0 ; igpu < ngpus ; ++igpu) {
                     cudaSetDevice(igpu);
-                    cublasSetStream(cu_handle, cu_trans_streams[igpu]);
-                    // Getting this in sync since we'll use it right away; see paper/thesis for details.
+                    // We cannot use the non-"Async" methods here since they will wait for EVERYTHING,
+                    // including the cu_comp_streams. We don't want to wait for the trsms here tho!
                     size_t nelems = xr_elems_per_device(x_b, m, wXR, n, iblock-1, ngpus, igpu);
-                    if((cu_status = cublasGetVector(nelems, sizeof(double), Xr_gpus[b][igpu], 1, XrB, 1)) != CUBLAS_STATUS_SUCCESS) {
+                    if((cu_status = cublasGetVectorAsync(nelems, sizeof(double), Xr_gpus[b][igpu], 1, XrB, 1, cu_trans_streams[igpu])) != CUBLAS_STATUS_SUCCESS) {
                         fprintf(stderr, "\n[ERROR] Couldn't get results from GPU %d! (info: %d, nelems=%lu)\n", igpu, cu_status, nelems);
                         exit(EXIT_FAILURE);
                     }
                     XrB += nelems;
+                }
+                // Thus, to have pseudo-sync recv's, we wait for the recv's we did above right away, see paper/thesis for details.
+                for(igpu = 0 ; igpu < ngpus ; ++igpu) {
+                    // Unnecessary to cudaSetDevice, according to "cuda_webinar_multi_gpu.pdf", p. 6
+                    cudaStreamSynchronize(cu_trans_streams[igpu]);
                 }
                 END_SECTION("GPU_recv_LXr");
             }
@@ -489,7 +494,6 @@ int fgls_chol_gpu( FGLS_config_t cf )
                 double* XrC = Xr[C];
                 for(igpu = 0 ; igpu < ngpus ; ++igpu) {
                     cudaSetDevice(igpu);
-                    cublasSetStream(cu_handle, cu_trans_streams[igpu]);
                     size_t nelems = xr_elems_per_device(x_b, m, wXR, n, iblock+1, ngpus, igpu);
                     if((cu_status = cublasSetVectorAsync(nelems, sizeof(double), XrC, 1, Xr_gpus[b][igpu], 1, cu_trans_streams[igpu])) != CUBLAS_STATUS_SUCCESS) {
                         fprintf(stderr, "\n[ERROR] Sending part of Xr to the GPU %d failed (info: %d, nelems=%lu)\n", igpu, cu_status, nelems);
