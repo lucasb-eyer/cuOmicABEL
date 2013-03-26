@@ -165,11 +165,7 @@ int fgls_chol_gpu( FGLS_config_t cf )
 	}
 
     if ( cf.t > 1 ) {
-        // Note/TODO: to make it work, you need to fix the "fetching next Xr
-        // from disk" code part to restart from offset zero at some point.
-        // That's why the loop over t is still left in.
-        fprintf(stderr, "\n[ERROR] The chol_gpu variant doesn't support multiple phenotypes. Use the chol or eigen variants.\n");
-        exit(EXIT_FAILURE);
+        fprintf(stderr, "\n[Warning] The GPU code has not been thoroughly tested with multiple phenotypes.\n");
     }
 
     ///////
