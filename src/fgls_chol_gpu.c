@@ -280,15 +280,6 @@ int fgls_chol_gpu( FGLS_config_t cf )
     // /GPU
     ///////
 
-// #if VAMPIR
-//     VT_USER_START("READ_X");
-// #endif
-//     /* Read first block of XR's */
-// 	double_buffering_read_XR( &db_XR, IO_BUFF, 0, (size_t)MIN( cf.x_b, cf.m ) - 1 );
-// 	double_buffering_swap( &db_XR );
-// #if VAMPIR
-//     VT_USER_END("READ_X");
-// #endif
 #if VAMPIR
     VT_USER_START("READ_Y");
 #endif
@@ -513,48 +504,6 @@ int fgls_chol_gpu( FGLS_config_t cf )
                 END_SECTION("GPU_send_Xr");
             }
 
-// #if VAMPIR
-//             VT_USER_START("READ_X");
-// #endif
-//             /* Read next block of XR's */
-// 			size_t next_x_from = ((size_t)ib + x_b) >= m ?  0 : (size_t)ib + x_b;
-// 			size_t next_x_to   = ((size_t)ib + x_b) >= m ? MIN( (size_t)x_b, (size_t)m ) - 1 :
-// 				                                           next_x_from + MIN( (size_t)x_b, (size_t)m - next_x_from ) - 1;
-// 			double_buffering_read_XR( &db_XR, IO_BUFF, next_x_from, next_x_to );
-// #if VAMPIR
-//             VT_USER_END("READ_X");
-// #endif
-
-// #if VAMPIR
-//             VT_USER_START("WAIT_X");
-// #endif
-//             /* Wait until current block of XR's is available for computation */
-// 			double_buffering_wait( &db_XR, COMP_BUFF );
-// #if VAMPIR
-//             VT_USER_END("WAIT_X");
-// #endif
-
-#if 0
-            /* Set the number of threads for the multi-threaded BLAS */
-			set_multi_threaded_BLAS( cf.num_threads );
-
-#if VAMPIR
-            VT_USER_START("COMP_IB");
-#endif
-            /* XR := inv(L) XR */
-			XR_comp = double_buffering_get_comp_buffer( &db_XR );
-			// Auxiliar variables
-            int x_inc = MIN(x_b, m - ib);
-            int rhss  = wXR * x_inc;
-			// Computation
-            dtrsm_(LEFT, LOWER, NO_TRANS, NON_UNIT, &n, &rhss, &ONE, M, &n, XR_comp, &n);
-
-#if VAMPIR
-            VT_USER_END("COMP_IB");
-#endif
-
-#endif // 0
-
             // S-loop B -> B^
             // aio_wait r[b-2]
             // aio_write r[b-2]
@@ -649,7 +598,7 @@ int fgls_chol_gpu( FGLS_config_t cf )
             }
 
             /* Swap buffers */
-			double_buffering_swap( &db_B  );
+            double_buffering_swap( &db_B  );
 
             // turn aroooouuuund
             A = (A + 1) % 3;
@@ -661,14 +610,13 @@ int fgls_chol_gpu( FGLS_config_t cf )
             b = (b + 1) % 2;
         }
         /* Swap buffers */
-		double_buffering_swap( &db_Y );
+        double_buffering_swap( &db_Y );
     }
 
 #if VAMPIR
     VT_USER_START("WAIT_ALL");
 #endif
     /* Wait for the remaining IO operations issued */
-// 	double_buffering_wait( &db_XR, COMP_BUFF );
 	double_buffering_wait( &db_Y,  COMP_BUFF );
 	double_buffering_wait( &db_B,  IO_BUFF );
 #if VAMPIR
@@ -705,7 +653,6 @@ int fgls_chol_gpu( FGLS_config_t cf )
     free( tmpBs );
     free( tmpVs );
 
-// 	double_buffering_destroy( &db_XR );
 	double_buffering_destroy( &db_Y  );
 	double_buffering_destroy( &db_B  );
 
