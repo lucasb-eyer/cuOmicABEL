@@ -581,16 +581,21 @@ int fgls_chol_gpu( FGLS_config_t cf )
                     printf("Chi square: %.6f\n", ( (oneB[p-1] / Bij[p+p-1]) * (oneB[p-1] / Bij[p+p-1]) ) );
 #endif
                 }
+                END_SECTION("SLOOP");
 
                 /* Wait until the previous blocks of B's and V's are written */
-                if (2 <= iblock)
+                if (2 <= iblock) {
+                    START_SECTION2("WAIT_R", "%d: aio_wait r[%s%d%s]", iblock, to_yellow, iblock-2, to_fg);
                     double_buffering_wait( &db_B, IO_BUFF );
+                    END_SECTION("WAIT_R");
+                }
 
                 /* Write current blocks of B's and V's */
+                START_SECTION2("WRITE_R", "%d: aio_write r[%s%d%s]", iblock, to_yellow, iblock-1, to_fg);
                 size_t offs = xr_blockoffs(x_b, m, iblock-1);
                 double_buffering_write_B( &db_B, COMP_BUFF, offs, offs+xr_blocklen(x_b, m, iblock-1) - 1, j, j );
+                END_SECTION("WRITE_R");
 
-                END_SECTION("SLOOP");
             }
 
             /* Swap buffers */
@@ -609,15 +614,11 @@ int fgls_chol_gpu( FGLS_config_t cf )
         double_buffering_swap( &db_Y );
     }
 
-#if VAMPIR
-    VT_USER_START("WAIT_ALL");
-#endif
+    START_SECTION("WAIT_ALL", "finally: waiting for last writes.");
     /* Wait for the remaining IO operations issued */
 	double_buffering_wait( &db_Y,  COMP_BUFF );
 	double_buffering_wait( &db_B,  IO_BUFF );
-#if VAMPIR
-    VT_USER_END("WAIT_ALL");
-#endif
+    END_SECTION("WAIT_ALL");
 
     // GPU: clean-up
     for(igpu = 0 ; igpu < ngpus ; ++igpu) {
