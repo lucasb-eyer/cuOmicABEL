@@ -389,10 +389,10 @@ int fgls_chol_gpu( FGLS_config_t cf )
             // (bordeaux dependency, also implied by single lifeline of GPU.)
             if(1 <= iblock) {
                 START_SECTION2("GPU_trsm", "%d: cu_trsm_wait %s%d%s", iblock, to_green, b, to_fg);
-//                 for(igpu = 0 ; igpu < ngpus ; ++igpu) {
-//                     // cudaSetDevice(igpu); // Unnecessary according to "cuda_webinar_multi_gpu.pdf", p. 6
-//                     cudaStreamSynchronize(cu_comp_streams[igpu]);
-//                 }
+                for(igpu = 0 ; igpu < ngpus ; ++igpu) {
+                    // Unnecessary to cudaSetDevice, according to "cuda_webinar_multi_gpu.pdf", p. 6
+                    cudaStreamSynchronize(cu_comp_streams[igpu]);
+                }
                 END_SECTION("GPU_trsm");
             }
 
@@ -412,17 +412,17 @@ int fgls_chol_gpu( FGLS_config_t cf )
             // dispatch the TRSM on the GPU for the block which was just sent there.
             if(0 <= iblock && iblock <= blockcount-1) {
                 START_SECTION2("GPU_trsm", "%d: %s%d%s <- cu_trsm_async (block %d)", iblock, to_green, a, to_fg, iblock);
-                int rhss  = wXR * xr_blocklen(x_b, m, iblock);
-
                 // TODO(lucasb): sanity check! (call to average, replaces NaNs by avg.)
 
                 for(igpu = 0 ; igpu < ngpus ; ++igpu) {
-//                     cudaSetDevice(igpu);
-//                     cublasSetStream(cu_handle, cu_comp_streams[igpu]);
-//                     if((cu_status = cublasDtrsm(cu_handle, CUBLAS_SIDE_LEFT, CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N, CUBLAS_DIAG_NON_UNIT, n, rhss/ngpus, &ONE, L_gpus[igpu], n, Xr_beta_gpus[igpu], n)) != CUBLAS_STATUS_SUCCESS) {
-//                         fprintf(stderr, "\n[ERROR] Computing the trsm on the GPU %d failed (info: %d)\n", igpu, cu_status);
-//                         exit(EXIT_FAILURE);
-//                     }
+                     cudaSetDevice(igpu);
+                     cublasSetStream(cu_handle, cu_comp_streams[igpu]);
+
+                     size_t nelems = xr_elems_per_device(x_b, m, wXR, n, iblock, ngpus, igpu);
+                     if((cu_status = cublasDtrsm(cu_handle, CUBLAS_SIDE_LEFT, CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N, CUBLAS_DIAG_NON_UNIT, n, nelems/n, &ONE, L_gpus[igpu], n, Xr_gpus[a][igpu], n)) != CUBLAS_STATUS_SUCCESS) {
+                         fprintf(stderr, "\n[ERROR] Computing the trsm on the GPU %d failed (info: %d)\n", igpu, cu_status);
+                         exit(EXIT_FAILURE);
+                     }
                 }
                 END_SECTION("GPU_trsm");
             }
