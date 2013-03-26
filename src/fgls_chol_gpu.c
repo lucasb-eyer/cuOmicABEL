@@ -412,7 +412,6 @@ int fgls_chol_gpu( FGLS_config_t cf )
             // dispatch the TRSM on the GPU for the block which was just sent there.
             if(0 <= iblock && iblock <= blockcount-1) {
                 START_SECTION2("GPU_trsm", "%d: %s%d%s <- cu_trsm_async (block %d)", iblock, to_green, a, to_fg, iblock);
-                // TODO(lucasb): sanity check! (call to average, replaces NaNs by avg.)
 
                 for(igpu = 0 ; igpu < ngpus ; ++igpu) {
                      cudaSetDevice(igpu);
@@ -481,6 +480,8 @@ int fgls_chol_gpu( FGLS_config_t cf )
                     exit(EXIT_FAILURE);
                 }
                 END_SECTION("WAIT_X");
+
+                // TODO(lucasb): sanity check! (call to average, replaces NaNs by avg.)
 
                 // cu_send_async C -> beta
                 // send the next X-block we just waited for to the GPU.
