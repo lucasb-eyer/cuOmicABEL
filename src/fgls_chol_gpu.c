@@ -364,7 +364,7 @@ int fgls_chol_gpu( FGLS_config_t cf )
         // The dependency colors refer to the "timeline-perspective" figure.
         // Basically, the idea is the following (read from top to bottom, then left to right):
         //
-        //       b = -1             b = 0             b = 1         b = 2..last-2       b = last-1          b = last         b = last+1
+        //       b = -2             b = -1            b = 0         b = 2..last-3       b = last-2         b = last-1          b = last
         //
         //        ---                ---            wait beta         wait alpha        wait beta          wait alpha           ---
         //        ---                ---               ---            wait beta         wait alpha         wait beta         wait alpha
@@ -381,13 +381,13 @@ int fgls_chol_gpu( FGLS_config_t cf )
         //   alpha<->beta
         int blockcount = m % x_b == 0 ? m/x_b : m/x_b+1;
         int iblock = 0;
-        for (iblock = -1 ; iblock <= blockcount+1 ; ++iblock)
+        for (iblock = -2 ; iblock <= blockcount ; ++iblock)
         {
             // cu_trsm_wait beta (previously alpha)
             // Wait for the previous GPU computation to be done...
             // (The first GPU computation happens at i == 1 thus we first wait at i == 2)
             // (bordeaux dependency, also implied by single lifeline of GPU.)
-            if(2 <= iblock) {
+            if(1 <= iblock) {
                 START_SECTION2("GPU_trsm", "%d: cu_trsm_wait %s%d%s", iblock, to_green, b, to_fg);
 //                 for(igpu = 0 ; igpu < ngpus ; ++igpu) {
 //                     // cudaSetDevice(igpu); // Unnecessary according to "cuda_webinar_multi_gpu.pdf", p. 6
@@ -399,7 +399,7 @@ int fgls_chol_gpu( FGLS_config_t cf )
             // cu_send_wait B -> alpha (previously C -> beta)
             // wait for the sending of the previous data-block to the GPU to be done.
             // (olive dependency)
-            if(1 <= iblock && iblock <= blockcount) {
+            if(0 <= iblock && iblock <= blockcount-1) {
                 START_SECTION2("GPU_send_Xr", "%d: cu_send_wait %s%d%s -> %s%d%s", iblock, to_red, B, to_fg, to_green, a, to_fg);
                 for(igpu = 0 ; igpu < ngpus ; ++igpu) {
                     // Unnecessary to cudaSetDevice, according to "cuda_webinar_multi_gpu.pdf", p. 6
@@ -410,9 +410,9 @@ int fgls_chol_gpu( FGLS_config_t cf )
 
             // alpha <- cu-trsm_async L_gpu, alpha
             // dispatch the TRSM on the GPU for the block which was just sent there.
-            if(1 <= iblock && iblock <= blockcount) {
+            if(0 <= iblock && iblock <= blockcount-1) {
                 START_SECTION2("GPU_trsm", "%d: %s%d%s <- cu_trsm_async (block %d)", iblock, to_green, a, to_fg, iblock);
-                int rhss  = wXR * xr_blocklen(x_b, m, iblock-1);
+                int rhss  = wXR * xr_blocklen(x_b, m, iblock);
 
                 // TODO(lucasb): sanity check! (call to average, replaces NaNs by avg.)
 
@@ -429,13 +429,13 @@ int fgls_chol_gpu( FGLS_config_t cf )
 
             // aio_read Xr[b+2] -> A
             // Read the second-next block from HDD to main memory.
-            if(iblock <= blockcount-2) {
+            if(iblock <= blockcount-3) {
                 START_SECTION2("READ_X", "%d: aio_read Xr[%s%d%s] -> %s%d%s", iblock, to_yellow, iblock+2, to_fg, to_red, A, to_fg);
                 memset(&aio_Xr[aio_A], 0, sizeof(aio_Xr[aio_A]));
                 aio_Xr[aio_A].aio_fildes = fileno(cf.XR);
                 aio_Xr[aio_A].aio_buf = Xr[A];
-                aio_Xr[aio_A].aio_nbytes = xr_blocklen(x_b, m, iblock+1) * wXR * n * sizeof(double);
-                aio_Xr[aio_A].aio_offset = x_b*(iblock+1) * wXR * n * sizeof(double);
+                aio_Xr[aio_A].aio_nbytes = xr_blocklen(x_b, m, iblock+2) * wXR * n * sizeof(double);
+                aio_Xr[aio_A].aio_offset = x_b*(iblock+2) * wXR * n * sizeof(double);
                 if(aio_read(&aio_Xr[aio_A]) != 0) {
                     fprintf(stderr, "\n[ERROR] Couldn't read asynchronuously! (%s)\n", strerror(errno));
                     exit(EXIT_FAILURE);
@@ -446,7 +446,7 @@ int fgls_chol_gpu( FGLS_config_t cf )
             // cu_recv B <- beta
             // synchronuously get the results of the previous TRSM, sync since
             // we need them for further computation anyway.
-            if(2 <= iblock) {
+            if(1 <= iblock) {
                 START_SECTION2("GPU_recv_LXr", "%d: cu_recv %s%d%s <- %s%d%s (%.2f MB)", iblock, to_red, B, to_fg, to_green, b, to_fg, xr_elems_per_device(x_b, m, wXR, n, iblock-1, ngpus, 0)*sizeof(double)/1024.0/1024.0);
                 double* XrB = Xr[B];
                 for(igpu = 0 ; igpu < ngpus ; ++igpu) {
@@ -454,7 +454,6 @@ int fgls_chol_gpu( FGLS_config_t cf )
                     cublasSetStream(cu_handle, cu_trans_streams[igpu]);
                     // Getting this in sync since we'll use it right away; see paper/thesis for details.
                     size_t nelems = xr_elems_per_device(x_b, m, wXR, n, iblock-1, ngpus, igpu);
-                    fprintf(stderr, "cublasGetVector(nelems=%lu, sizeof(double)=%lu, Xr_gpus[b=%lu][igpu=%d]=%p, 1, XrB=%p, 1)\n", nelems, sizeof(double), b, igpu, Xr_gpus[b][igpu], XrB);
                     if((cu_status = cublasGetVector(nelems, sizeof(double), Xr_gpus[b][igpu], 1, XrB, 1)) != CUBLAS_STATUS_SUCCESS) {
                         fprintf(stderr, "\n[ERROR] Couldn't get results from GPU %d! (info: %d, nelems=%lu)\n", igpu, cu_status, nelems);
                         exit(EXIT_FAILURE);
@@ -469,7 +468,7 @@ int fgls_chol_gpu( FGLS_config_t cf )
             // waits for the next X-block to be loaded and then sends it to
             // the GPU so that it can be TRSMed in the next iteration.
             // (blue dependency)
-            if(0 <= iblock && iblock <= blockcount-1) {
+            if(-1 <= iblock && iblock <= blockcount-2) {
                 START_SECTION2("WAIT_X", "%d: aio_wait Xr[%s%d%s] -> %s%d%s (%.2f MB)", iblock, to_yellow, iblock+1, to_fg, to_red, C, to_fg, aio_Xr[aio_C].aio_nbytes/1024.0/1024.0);
                 if(aio_suspend((const struct aiocb* const[]){&aio_Xr[aio_C]}, 1, NULL) != 0) {
                     fprintf(stderr, "\n[ERROR] Couldn't wait for asynchronuous read! (%s)\n", strerror(errno));
@@ -550,7 +549,7 @@ int fgls_chol_gpu( FGLS_config_t cf )
             // aio_write r[b-2]
             // Perform the "remaining" computations using the previous TRSM's
             // result on the CPU and then schedule their writing to HDD.
-            if(2 <= iblock) {
+            if(1 <= iblock) {
                 START_SECTION2("COMP_I", "%d: S-loop %s%d%s", iblock, to_red, B, to_fg);
 //                sloop(out_r, Xr_block, Xl, y, Stl);
                 END_SECTION("COMP_I");
