@@ -84,6 +84,11 @@ static size_t xr_blocklen(size_t blocklen, size_t totallen, size_t iblock)
     return MIN(blocklen, totallen - (iblock)*blocklen);
 }
 
+static size_t xr_blockoffs(size_t blocklen, size_t totallen, size_t iblock)
+{
+    return iblock == 0 ? 0 : xr_blocklen(blocklen, totallen, iblock-1)*iblock ;
+}
+
 static size_t xr_elems_per_device(size_t blocklen, size_t totallen, size_t wXR, size_t n, size_t iblock, size_t ngpus, size_t igpu)
 {
     // TODO(lucasb): stop assuming that this thing is divisible by ngpus.
@@ -249,7 +254,7 @@ int fgls_chol_gpu( FGLS_config_t cf )
     tmpVs = ( double * ) fgls_malloc ( cf.p * cf.p * cf.num_threads * sizeof(double) );
 
     /* Files and pointers for out-of-core */
-    double *XR_comp, *Y_comp, *B_comp;
+    double *Y_comp, *B_comp;
 
     /* Asynchronous IO data structures */
 	double_buffering db_Y, db_B;
@@ -294,7 +299,6 @@ int fgls_chol_gpu( FGLS_config_t cf )
     VT_USER_END("READ_Y");
 #endif
 
-    int iter = 0;
     for ( j = 0; j < t; j++ )
     {
         /* Set the number of threads for the multi-threaded BLAS */
@@ -434,7 +438,7 @@ int fgls_chol_gpu( FGLS_config_t cf )
                 aio_Xr[aio_A].aio_fildes = fileno(cf.XR);
                 aio_Xr[aio_A].aio_buf = Xr[A];
                 aio_Xr[aio_A].aio_nbytes = xr_blocklen(x_b, m, iblock+2) * wXR * n * sizeof(double);
-                aio_Xr[aio_A].aio_offset = x_b*(iblock+2) * wXR * n * sizeof(double);
+                aio_Xr[aio_A].aio_offset = xr_blockoffs(x_b, m, iblock+2) * wXR * n * sizeof(double);
                 if(aio_read(&aio_Xr[aio_A]) != 0) {
                     fprintf(stderr, "\n[ERROR] Couldn't read asynchronuously! (%s)\n", strerror(errno));
                     exit(EXIT_FAILURE);
@@ -489,7 +493,7 @@ int fgls_chol_gpu( FGLS_config_t cf )
                 // Sanity check! (call to average, replaces NaNs by avg.)
                 START_SECTION2("SANCK", "%d: sanity_check", iblock);
                 size_t blocklen = xr_blocklen(x_b, m, iblock+1);
-                size_t isnp = iblock >= 0 ? xr_blocklen(x_b, m, iblock)*(iblock+1) : 0; // Just to make it explicit.
+                size_t isnp = xr_blockoffs(x_b, m, iblock+1);
                 average(Xr[C], n, blocklen, cf.threshold, "SNP", &cf.XR_fvi->fvi_data[(n+isnp)*NAMELENGTH], NAMELENGTH, 1);
                 END_SECTION("SANCK");
 
@@ -542,9 +546,6 @@ int fgls_chol_gpu( FGLS_config_t cf )
 			// Auxiliar variables
             int x_inc = MIN(x_b, m - ib);
             int rhss  = wXR * x_inc;
-			// Sanity check
-			average( XR_comp, n, x_inc, cf.threshold, "SNP",
-					&cf.XR_fvi->fvi_data[(n+ib)*NAMELENGTH], NAMELENGTH, 1 );
 			// Computation
             dtrsm_(LEFT, LOWER, NO_TRANS, NON_UNIT, &n, &rhss, &ONE, M, &n, XR_comp, &n);
 
@@ -560,26 +561,15 @@ int fgls_chol_gpu( FGLS_config_t cf )
             // Perform the "remaining" computations using the previous TRSM's
             // result on the CPU and then schedule their writing to HDD.
             if(1 <= iblock) {
-                START_SECTION2("COMP_I", "%d: S-loop %s%d%s", iblock, to_red, B, to_fg);
-//                sloop(out_r, Xr_block, Xl, y, Stl);
-                END_SECTION("COMP_I");
-            }
-
-#if 0
-
+                START_SECTION2("SLOOP", "%d: S-loop %s%d%s", iblock, to_red, B, to_fg);
+            B_comp = double_buffering_get_comp_buffer( &db_B );
 #if CHOL_MIX_PARALLELISM
             /* Set the number of threads for the multi-threaded BLAS to 1.
              * The innermost loop is parallelized using OPENMP */
-			set_single_threaded_BLAS();
-#endif
-#if VAMPIR
-            VT_USER_START("COMP_I");
-#endif
-            B_comp = double_buffering_get_comp_buffer( &db_B );
-#if CHOL_MIX_PARALLELISM
+            set_single_threaded_BLAS();
             #pragma omp parallel for private(Bij, oneB, oneV, i, k, info, id) schedule(static) num_threads(cf.num_threads)
 #endif
-            for (i = 0; i < x_inc; i++)
+            for (i = 0; i < xr_blocklen(x_b, m, iblock-1); i++)
             {
 				id = omp_get_thread_num();
 				oneB = &tmpBs[ id * p ];
@@ -592,7 +582,7 @@ int fgls_chol_gpu( FGLS_config_t cf )
                 // B_B := XR' * y
                 dgemv_("T",
                         &n, &wXR,
-                        &ONE, &XR_comp[i * wXR * n], &n, Y_comp, &iONE,
+                        &ONE, &Xr[B][i * wXR * n], &n, Y_comp, &iONE,
                         &ZERO, &oneB[wXL], &iONE);
 
                 // Building V
@@ -602,12 +592,12 @@ int fgls_chol_gpu( FGLS_config_t cf )
                 // V_BL := XR' * XL
                 dgemm_("T", "N",
                         &wXR, &wXL, &n,
-                        &ONE, &XR_comp[i * wXR * n], &n, XL, &n,
+                        &ONE, &Xr[B][i * wXR * n], &n, XL, &n,
                         &ZERO, &oneV[wXL], &p); // V_BL
                 // V_BR := XR' * XR
                 dsyrk_("L", "T",
                         &wXR, &n,
-                        &ONE, &XR_comp[i * wXR * n], &n,
+                        &ONE, &Xr[B][i * wXR * n], &n,
                         &ZERO, &oneV[wXL * p + wXL], &p); // V_BR
 
                 // B := inv(V) * B
@@ -646,34 +636,20 @@ int fgls_chol_gpu( FGLS_config_t cf )
 			  printf("Chi square: %.6f\n", ( (oneB[p-1] / Bij[p+p-1]) * (oneB[p-1] / Bij[p+p-1]) ) );
 #endif
             }
-#if VAMPIR
-            VT_USER_END("COMP_I");
-#endif
 
-#if VAMPIR
-            VT_USER_START("WAIT_BV");
-#endif
             /* Wait until the previous blocks of B's and V's are written */
-            if ( iter > 0)
+            if (2 <= iblock)
                 double_buffering_wait( &db_B, IO_BUFF );
-#if VAMPIR
-            VT_USER_END("WAIT_BV");
-#endif
-            /* Write current blocks of B's and V's */
-#if VAMPIR
-            VT_USER_START("WRITE_BV");
-#endif
-			double_buffering_write_B( &db_B, COMP_BUFF, ib, ib+x_inc - 1, j, j );
-#if VAMPIR
-            VT_USER_END("WRITE_BV");
-#endif
 
-#endif
+            /* Write current blocks of B's and V's */
+            size_t offs = xr_blockoffs(x_b, m, iblock-1);
+			double_buffering_write_B( &db_B, COMP_BUFF, offs, offs+xr_blocklen(x_b, m, iblock-1) - 1, j, j );
+
+                END_SECTION("SLOOP");
+            }
 
             /* Swap buffers */
-//			double_buffering_swap( &db_XR );
 			double_buffering_swap( &db_B  );
-            iter++; // TODO: don't need.
 
             // turn aroooouuuund
             A = (A + 1) % 3;
