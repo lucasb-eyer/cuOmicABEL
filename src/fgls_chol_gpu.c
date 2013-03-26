@@ -486,7 +486,12 @@ int fgls_chol_gpu( FGLS_config_t cf )
                 }
                 END_SECTION("WAIT_X");
 
-                // TODO(lucasb): sanity check! (call to average, replaces NaNs by avg.)
+                // Sanity check! (call to average, replaces NaNs by avg.)
+                START_SECTION2("SANCK", "%d: sanity_check", iblock);
+                size_t blocklen = xr_blocklen(x_b, m, iblock+1);
+                size_t isnp = iblock >= 0 ? xr_blocklen(x_b, m, iblock)*(iblock+1) : 0; // Just to make it explicit.
+                average(Xr[C], n, blocklen, cf.threshold, "SNP", &cf.XR_fvi->fvi_data[(n+isnp)*NAMELENGTH], NAMELENGTH, 1);
+                END_SECTION("SANCK");
 
                 // cu_send_async C -> beta
                 // send the next X-block we just waited for to the GPU.
