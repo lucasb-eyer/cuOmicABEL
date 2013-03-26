@@ -562,88 +562,88 @@ int fgls_chol_gpu( FGLS_config_t cf )
             // result on the CPU and then schedule their writing to HDD.
             if(1 <= iblock) {
                 START_SECTION2("SLOOP", "%d: S-loop %s%d%s", iblock, to_red, B, to_fg);
-            B_comp = double_buffering_get_comp_buffer( &db_B );
+                B_comp = double_buffering_get_comp_buffer( &db_B );
 #if CHOL_MIX_PARALLELISM
-            /* Set the number of threads for the multi-threaded BLAS to 1.
-             * The innermost loop is parallelized using OPENMP */
-            set_single_threaded_BLAS();
-            #pragma omp parallel for private(Bij, oneB, oneV, i, k, info, id) schedule(static) num_threads(cf.num_threads)
+                /* Set the number of threads for the multi-threaded BLAS to 1.
+                 * The innermost loop is parallelized using OPENMP */
+                set_single_threaded_BLAS();
+                #pragma omp parallel for private(Bij, oneB, oneV, i, k, info, id) schedule(static) num_threads(cf.num_threads)
 #endif
-            for (i = 0; i < xr_blocklen(x_b, m, iblock-1); i++)
-            {
-				id = omp_get_thread_num();
-				oneB = &tmpBs[ id * p ];
-				oneV = &tmpVs[ id * p * p ];
-                Bij = &B_comp[i * size_one_b_record];
-
-                // Building B
-                // Copy B_T
-                memcpy(oneB, B_t, wXL * sizeof(double));
-                // B_B := XR' * y
-                dgemv_("T",
-                        &n, &wXR,
-                        &ONE, &Xr[B][i * wXR * n], &n, Y_comp, &iONE,
-                        &ZERO, &oneB[wXL], &iONE);
-
-                // Building V
-                // Copy V_TL
-                for( k = 0; k < wXL; k++ )
-                    dcopy_(&wXL, &V_tl[k*wXL], &iONE, &oneV[k*p], &iONE); // V_TL
-                // V_BL := XR' * XL
-                dgemm_("T", "N",
-                        &wXR, &wXL, &n,
-                        &ONE, &Xr[B][i * wXR * n], &n, XL, &n,
-                        &ZERO, &oneV[wXL], &p); // V_BL
-                // V_BR := XR' * XR
-                dsyrk_("L", "T",
-                        &wXR, &n,
-                        &ONE, &Xr[B][i * wXR * n], &n,
-                        &ZERO, &oneV[wXL * p + wXL], &p); // V_BR
-
-                // B := inv(V) * B
-                dpotrf_(LOWER, &p, oneV, &p, &info);
-                if (info != 0)
+                for (i = 0; i < xr_blocklen(x_b, m, iblock-1); i++)
                 {
-					for ( k = 0; k < size_one_b_record; k++ )
-						Bij[k] = 0.0/0.0; //nan("char-sequence");
-					continue;
-                }
-                dtrsv_(LOWER, NO_TRANS, NON_UNIT, &p, oneV, &p, oneB, &iONE);
-                dtrsv_(LOWER,    TRANS, NON_UNIT, &p, oneV, &p, oneB, &iONE);
+                    id = omp_get_thread_num();
+                    oneB = &tmpBs[ id * p ];
+                    oneV = &tmpVs[ id * p * p ];
+                    Bij = &B_comp[i * size_one_b_record];
 
-                /* V := res_sigma * inv( X' inv(M) X) */
-                dpotri_(LOWER, &p, oneV, &p, &info);
-                if (info != 0)
-                {
-                    char err[STR_BUFFER_SIZE];
-                    snprintf(err, STR_BUFFER_SIZE, "dpotri failed (info: %d)", info);
-                    error_msg(err, 1);
-                }
+                    // Building B
+                    // Copy B_T
+                    memcpy(oneB, B_t, wXL * sizeof(double));
+                    // B_B := XR' * y
+                    dgemv_("T",
+                            &n, &wXR,
+                            &ONE, &Xr[B][i * wXR * n], &n, Y_comp, &iONE,
+                            &ZERO, &oneB[wXL], &iONE);
 
-				// Copy output
-				for ( k = 0; k < p; k++ )
-					Bij[k] = (float) oneB[k];
-                for ( k = 0; k < p; k++ )
-                    Bij[p+k] = (float)sqrt(oneV[k*p+k]);
-				int idx = 0;
-				for ( k = 0; k < p-1; k++ ) // Cols of V
-					for ( l = k+1; l < p; l++ ) // Rows of V
-					{
-						Bij[p+p+idx] = (float)oneV[k*p+l];
-						idx++;
-					}
+                    // Building V
+                    // Copy V_TL
+                    for( k = 0; k < wXL; k++ )
+                        dcopy_(&wXL, &V_tl[k*wXL], &iONE, &oneV[k*p], &iONE); // V_TL
+                    // V_BL := XR' * XL
+                    dgemm_("T", "N",
+                            &wXR, &wXL, &n,
+                            &ONE, &Xr[B][i * wXR * n], &n, XL, &n,
+                            &ZERO, &oneV[wXL], &p); // V_BL
+                    // V_BR := XR' * XR
+                    dsyrk_("L", "T",
+                            &wXR, &n,
+                            &ONE, &Xr[B][i * wXR * n], &n,
+                            &ZERO, &oneV[wXL * p + wXL], &p); // V_BR
+
+                    // B := inv(V) * B
+                    dpotrf_(LOWER, &p, oneV, &p, &info);
+                    if (info != 0)
+                    {
+                        for ( k = 0; k < size_one_b_record; k++ )
+                            Bij[k] = 0.0/0.0; //nan("char-sequence");
+                        continue;
+                    }
+                    dtrsv_(LOWER, NO_TRANS, NON_UNIT, &p, oneV, &p, oneB, &iONE);
+                    dtrsv_(LOWER,    TRANS, NON_UNIT, &p, oneV, &p, oneB, &iONE);
+
+                    /* V := res_sigma * inv( X' inv(M) X) */
+                    dpotri_(LOWER, &p, oneV, &p, &info);
+                    if (info != 0)
+                    {
+                        char err[STR_BUFFER_SIZE];
+                        snprintf(err, STR_BUFFER_SIZE, "dpotri failed (info: %d)", info);
+                        error_msg(err, 1);
+                    }
+
+                    // Copy output
+                    for ( k = 0; k < p; k++ )
+                        Bij[k] = (float) oneB[k];
+                    for ( k = 0; k < p; k++ )
+                        Bij[p+k] = (float)sqrt(oneV[k*p+k]);
+                    int idx = 0;
+                    for ( k = 0; k < p-1; k++ ) // Cols of V
+                        for ( l = k+1; l < p; l++ ) // Rows of V
+                        {
+                            Bij[p+p+idx] = (float)oneV[k*p+l];
+                            idx++;
+                        }
 #if 0
-			  printf("Chi square: %.6f\n", ( (oneB[p-1] / Bij[p+p-1]) * (oneB[p-1] / Bij[p+p-1]) ) );
+                    printf("Chi square: %.6f\n", ( (oneB[p-1] / Bij[p+p-1]) * (oneB[p-1] / Bij[p+p-1]) ) );
 #endif
-            }
+                }
 
-            /* Wait until the previous blocks of B's and V's are written */
-            if (2 <= iblock)
-                double_buffering_wait( &db_B, IO_BUFF );
+                /* Wait until the previous blocks of B's and V's are written */
+                if (2 <= iblock)
+                    double_buffering_wait( &db_B, IO_BUFF );
 
-            /* Write current blocks of B's and V's */
-            size_t offs = xr_blockoffs(x_b, m, iblock-1);
-			double_buffering_write_B( &db_B, COMP_BUFF, offs, offs+xr_blocklen(x_b, m, iblock-1) - 1, j, j );
+                /* Write current blocks of B's and V's */
+                size_t offs = xr_blockoffs(x_b, m, iblock-1);
+                double_buffering_write_B( &db_B, COMP_BUFF, offs, offs+xr_blocklen(x_b, m, iblock-1) - 1, j, j );
 
                 END_SECTION("SLOOP");
             }
