@@ -142,7 +142,9 @@ Parameters::Parameters(int argc,char* argv[]) {
 	cmdline.erase(0,seppos);//Erase file name
 	iout_fname = filename + ".iout";
 	out_fname = filename + ".out";
-	info = Parameter(cmdline, "info","info.txt");
+	h = Parameter(cmdline,"h","");
+	help = Parameter(cmdline,"help","");
+	info = Parameter(cmdline, "info","");
 	cmdline=info.delfromcmdline(cmdline);
 	datadims = Parameter(cmdline, "datadims","datdims.txt");
 	cmdline=datadims.delfromcmdline(cmdline);

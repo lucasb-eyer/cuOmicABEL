@@ -36,9 +36,15 @@ ver 0.006
 		if there are no input parameters(only file's path) output is whole data 
 	you can set outfile's name for all parameters. Like this
 		./reshuffle.exe --datadims=file=datadimension.txt : output >> datadimension.txt
-		./reshuffle.exe --datadslim=file=very_slim_data.txt--chi=20	: output >> very_slim_data.txt
+		./reshuffle.exe --dataslim=file=very_slim_data.txt--chi=20	: output >> very_slim_data.txt
 		default file's name are as previous 
 	some changes in info messages
-	
+
+ver 0.007
+	quick help
+		if file's name doesn't set or user set 
+			--help
+		help information would on your screen
+		
 		
 		

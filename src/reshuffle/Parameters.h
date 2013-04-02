@@ -33,9 +33,11 @@ ostream &operator <<(ostream &, Parameter);
 
 class Parameters {
 public:
-	Parameter info; // Write info about progeamm's run
 	string iout_fname; //iout_file_name
 	string out_fname;
+	Parameter h; //Print help
+	Parameter help; //Print help
+	Parameter info; // Write info about progeamm's run
 	Parameter datadims;
 	Parameter snpnames;
 	Parameter traitnames;
