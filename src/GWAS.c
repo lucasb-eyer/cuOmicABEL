@@ -121,7 +121,7 @@ void initialize_config(
 	load_file ( cf->XL_data_path,   "rb", cf->XL,   cf->n * cf->wXL );
 	// Sanity check (XL)
 	average( cf->XL, cf->n, cf->wXL, cf->threshold, "Covariate", 
-			&cf->XL_fvi->fvi_data[cf->n*NAMELENGTH], NAMELENGTH, 1 );
+			&cf->XL_fvi->fvi_data[cf->n*NAMELENGTH], NAMELENGTH, 1, cf->num_threads );
 	cf->ZtXL = NULL;
 	cf->Z    = NULL;
 	cf->W    = NULL;

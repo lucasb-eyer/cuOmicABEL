@@ -52,7 +52,7 @@
  * The other matrix is m x n
  */
 void ooc_gemm( int m, int n, int ooc_b, double *Z, char *in, char *out, 
-		int threshold, const char *obj_type, char *obj_name, int namelength )
+		int threshold, const char *obj_type, char *obj_name, int namelength, int nthreads_avg )
 {
 	/* Files */
 	FILE *fp_in  = fgls_fopen( in, "rb" );
@@ -105,7 +105,7 @@ void ooc_gemm( int m, int n, int ooc_b, double *Z, char *in, char *out,
 		/*printf("Compute\n");*/
 
 		// Sanity check
-		average( in_comp, m, cur_n, threshold, obj_type, &obj_name[i*namelength], namelength, 1 );
+		average( in_comp, m, cur_n, threshold, obj_type, &obj_name[i*namelength], namelength, 1, nthreads_avg );
 #if VAMPIR
     VT_USER_START("OOC_GEMM");
 #endif

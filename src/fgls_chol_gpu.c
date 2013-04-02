@@ -338,7 +338,7 @@ int fgls_chol_gpu( FGLS_config_t cf )
 		Y_comp = double_buffering_get_comp_buffer( &db_Y );
 		// Sanity check
 		average( Y_comp, n, 1, cf.threshold, "TRAIT",
-				&cf.Y_fvi->fvi_data[n*NAMELENGTH], NAMELENGTH, 0 );
+				&cf.Y_fvi->fvi_data[n*NAMELENGTH], NAMELENGTH, 0, cf.num_threads );
         dtrsv_(LOWER, NO_TRANS, NON_UNIT, &n, M, &n, Y_comp, &iONE);
 
         /* B_t := XL' * y */
@@ -481,7 +481,7 @@ int fgls_chol_gpu( FGLS_config_t cf )
                 START_SECTION2("SANCK", "%d: sanity_check", iblock);
                 size_t blocklen = xr_blocklen(x_b, m, iblock+1);
                 size_t isnp = xr_blockoffs(x_b, m, iblock+1);
-                average(Xr[C], n, blocklen*wXR, cf.threshold, "SNP", &cf.XR_fvi->fvi_data[(n+isnp)*NAMELENGTH], NAMELENGTH, 1);
+                average(Xr[C], n, blocklen*wXR, cf.threshold, "SNP", &cf.XR_fvi->fvi_data[(n+isnp)*NAMELENGTH], NAMELENGTH, 1, cf.num_threads);
                 END_SECTION("SANCK");
 
                 // cu_send_async C -> beta

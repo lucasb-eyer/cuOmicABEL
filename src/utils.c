@@ -366,17 +366,17 @@ void print_timestamp( void )
 	printf( "%lld:%lld seconds\n", (long long)t.tv_sec, (long long)t.tv_usec );
 }
 
-void average( double *data, int n, int ncols, int threshold, const char *obj_type, char *obj_name, int namelength, int verbose )
+void average( double *data, int n, int ncols, int threshold, const char *obj_type, char *obj_name, int namelength, int verbose, int nthreads )
 {
-	int i, j;
-	double sum, avg;
-	int nans, infs;
+	int j;
 
+	#pragma omp parallel for private(j) schedule(static) num_threads(nthreads)
 	for ( j = 0; j < ncols; j++ )
 	{
-		sum = 0.0;
-		nans = 0;
-		infs = 0;
+		double sum = 0.0;
+		int nans = 0;
+		int infs = 0;
+        int i;
 		for ( i = 0; i < n; i++ )
 		{
 			if ( isnan(data[j*n + i]) )
@@ -389,7 +389,7 @@ void average( double *data, int n, int ncols, int threshold, const char *obj_typ
 			else
 				sum += data[j*n + i];
 		}
-		avg = sum / (n-nans-infs);
+		double avg = sum / (n-nans-infs);
 		for ( i = 0; i < n; i++ )
 		{
 			if ( isnan(data[j*n + i]) || isinf(data[j*n + i]) )

@@ -73,7 +73,7 @@ int fgls_eigen( FGLS_config_t *cf )
 
     // Premultiply Z' XR
     ooc_gemm( cf->n, cf->m * cf->wXR, cf->ooc_b, cf->Z, cf->XR_data_path, cf->ZtXR_path,
-			cf->threshold, "SNP", &cf->XR_fvi->fvi_data[cf->n*NAMELENGTH], NAMELENGTH );
+			cf->threshold, "SNP", &cf->XR_fvi->fvi_data[cf->n*NAMELENGTH], NAMELENGTH, cf->num_threads );
     
 #if VAMPIR
     VT_USER_END("PRELOOP");

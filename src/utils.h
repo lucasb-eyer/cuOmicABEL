@@ -45,7 +45,7 @@ void estimate_block_sizes( FGLS_config_t *cf, const char* var, int estimate_inc 
 void print_timestamp( void );
 
 // Sanity
-void average( double *data, int n, int ncols, int threshold, const char *obj_type, char *obj_name, int namelength, int verbose );
+void average( double *data, int n, int ncols, int threshold, const char *obj_type, char *obj_name, int namelength, int verbose, int nthreads );
 void checkNoNans( size_t n, double *buff, const char* err_msg);
 
 #endif // UTILS_H

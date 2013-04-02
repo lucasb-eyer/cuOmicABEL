@@ -84,7 +84,7 @@ void estimates_eig( FGLS_config_t *cf )
 	premultiplyXL( data.n, data.wXL, data.Z, data.X, data.ZtX );
 	// Premultiply ZtY
 	ooc_gemm( data.n, cf->t, cf->ooc_b, data.Z, cf->Y_data_path, cf->ZtY_path,
-			cf->threshold, "TRAIT", &cf->Y_fvi->fvi_data[cf->n*NAMELENGTH], NAMELENGTH);
+			cf->threshold, "TRAIT", &cf->Y_fvi->fvi_data[cf->n*NAMELENGTH], NAMELENGTH, cf->num_threads);
 
 	// Iterate over phenotypes (Y)
 	data.Y = fgls_malloc( data.n * sizeof(double) );
@@ -95,7 +95,7 @@ void estimates_eig( FGLS_config_t *cf )
 	{
 		sync_read( data.Y, cf->Y, cf->n, cf->n * j );
 		// Sanity
-		average( data.Y, cf->n, 1, cf->threshold, "TRAIT", &cf->Y_fvi->fvi_data[(cf->n+j)*NAMELENGTH], NAMELENGTH, 0 );
+		average( data.Y, cf->n, 1, cf->threshold, "TRAIT", &cf->Y_fvi->fvi_data[(cf->n+j)*NAMELENGTH], NAMELENGTH, 0, cf->num_threads );
 
 		sync_read( data.ZtY, cf->ZtY, cf->n, cf->n * j );
 		data.sigma = variance(data.Y, data.n);

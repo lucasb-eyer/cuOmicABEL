@@ -216,7 +216,7 @@ int fgls_chol( FGLS_config_t cf )
 		Y_comp = double_buffering_get_comp_buffer( &db_Y );
 		// Sanity check
 		average( Y_comp, n, 1, cf.threshold, "TRAIT", 
-				&cf.Y_fvi->fvi_data[n*NAMELENGTH], NAMELENGTH, 0 );
+				&cf.Y_fvi->fvi_data[n*NAMELENGTH], NAMELENGTH, 0, cf.num_threads );
         dtrsv_(LOWER, NO_TRANS, NON_UNIT, &n, M, &n, Y_comp, &iONE);
 
         /* B_t := XL' * y */
@@ -264,7 +264,7 @@ int fgls_chol( FGLS_config_t cf )
             int rhss  = wXR * x_inc;
 			// Sanity check
 			average( XR_comp, n, x_inc, cf.threshold, "SNP", 
-					&cf.XR_fvi->fvi_data[(n+ib)*NAMELENGTH], NAMELENGTH, 1 );
+					&cf.XR_fvi->fvi_data[(n+ib)*NAMELENGTH], NAMELENGTH, 1, cf.num_threads );
 			// Computation
             dtrsm_(LEFT, LOWER, NO_TRANS, NON_UNIT, &n, &rhss, &ONE, M, &n, XR_comp, &n);
 

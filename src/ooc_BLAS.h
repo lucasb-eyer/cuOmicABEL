@@ -26,6 +26,6 @@
 #define OOC_BLAS_H
 
 void ooc_gemm( int m, int n, int ooc_b, double *Z, char *in, char *out,
-		int threshold, const char *obj_type, char *obj_name, int namelength );
+		int threshold, const char *obj_type, char *obj_name, int namelength, int nthreads_avg );
 
 #endif // OOC_BLAS_H
