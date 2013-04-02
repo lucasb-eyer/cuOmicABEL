@@ -481,7 +481,7 @@ int fgls_chol_gpu( FGLS_config_t cf )
                 START_SECTION2("SANCK", "%d: sanity_check", iblock);
                 size_t blocklen = xr_blocklen(x_b, m, iblock+1);
                 size_t isnp = xr_blockoffs(x_b, m, iblock+1);
-                average(Xr[C], n, blocklen, cf.threshold, "SNP", &cf.XR_fvi->fvi_data[(n+isnp)*NAMELENGTH], NAMELENGTH, 1);
+                average(Xr[C], n, blocklen*wXR, cf.threshold, "SNP", &cf.XR_fvi->fvi_data[(n+isnp)*NAMELENGTH], NAMELENGTH, 1);
                 END_SECTION("SANCK");
 
                 // cu_send_async C -> beta
