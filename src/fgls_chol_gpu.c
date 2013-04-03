@@ -321,6 +321,21 @@ int fgls_chol_gpu( FGLS_config_t cf )
             error_msg(err, 1);
         }
 
+        // Wait for the previous gpu action to finish, whatever that was.
+        sync_gpus(ngpus);
+
+        START_SECTION("GPU_send_L", "cublas_send L -> L_gpus");
+        // GPU: Transfer L to the GPU(s) already.
+        for(igpu = 0 ; igpu < ngpus ; ++igpu) {
+            cudaSetDevice(igpu);
+            // TODO: could do that in async! But that'd differ from the paper.
+            if((cu_status = cublasSetVector(L_gpu_bytes/sizeof(double), sizeof(double), M, 1, L_gpus[igpu], 1)) != CUBLAS_STATUS_SUCCESS) {
+                fprintf(stderr, "\n[ERROR] Sending L to the GPU %d failed (info: %d)", igpu, cu_status);
+                exit(EXIT_FAILURE);
+            }
+        }
+        END_SECTION("GPU_send_L");
+
         /* XL := inv(L) * XL */
         memcpy( XL, XL_orig, wXL * n * sizeof(double) );
         dtrsm_(LEFT, LOWER, NO_TRANS, NON_UNIT, &n, &wXL, &ONE, M, &n, XL, &n);
